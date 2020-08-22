@@ -1,0 +1,12 @@
+.DS_Store
+
+.ipynb_checkpoints
+__pycache__
+build
+dist
+ltc.egg-info
+.version
+
+default.profraw
+
+dev.ipynb
