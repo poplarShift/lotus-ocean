@@ -89,24 +89,3 @@ class ModelRun(param.Parameterized):
 
     def _write_output(self):
         self._states.append(self.state.output_state())
-
-###
-
-class KalmanFilterRun(ModelRun):
-
-    def __init__(self, *argv, **kwarg):
-        self._saved_filters = []
-        super().__init__(*argv, **kwarg)
-
-
-    def _write_output(self):
-        super()._write_output()
-        self._saved_filters.append(deepcopy(self.stepper.output_filter_params()))
-
-    @property
-    def saved_filters(model):
-        if xr is None:
-            return model._saved_filters
-        else:
-            ds = xr.concat(model._saved_filters, 'time')
-            return ds
