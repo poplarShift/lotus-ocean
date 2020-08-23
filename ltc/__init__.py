@@ -19,7 +19,8 @@ def link_components(**components):
         Return list of all parameters of an instance that represents
         a canonical component
         """
-        _canonical_components = ['state', 'model', 'stepper', 'run', 'observations', 'kfilter', 'forcing']
+        _canonical_components = ['state', 'model', 'stepper', 'run', 'observations',
+                                 'forcing']
         all_params = list(inst.params().keys())
         canonical_params = [p for p in all_params if p in _canonical_components]
         return canonical_params
