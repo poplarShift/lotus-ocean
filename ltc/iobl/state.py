@@ -453,6 +453,7 @@ class WaterColumn(State):
         If xarray is available, convert to an xarray Dataset.
         """
         state = self
+        state.calculate_ancillary()
 
         if xr is None:
             return deepcopy(state)
