@@ -10,6 +10,7 @@ import gsw
 import numpy as np
 
 from ..util.time import Time
+from ..util.profile import significant_decimals
 
 import numbers
 try:
@@ -285,6 +286,9 @@ class WaterColumn(State):
             zz[0] - 0.5*(zz[1]-zz[0]),
             zz[1:] - 0.5*dzz,
         ]
+        sig = significant_decimals(z)
+        z = np.around(z, decimals=sig)
+
         dz = np.diff(z)
         # state.h = np.max(z) # TBD basically unused
         return dict(z=z, dz=dz, zz=zz, dzz=dzz)

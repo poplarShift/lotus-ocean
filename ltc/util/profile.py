@@ -68,7 +68,7 @@ def convert_ctd(S, T, depth, hice, lon, lat, ts_units, depth_unit):
     return SA, CT, z, p
 
 
-def make_staggered_grid(deltaz, depth):
+def make_staggered_grid(deltaz, depth, decimals=3):
     """
     Create staggered grid (z, zz) where z[0]=0, and zz are halfway between z.
 
@@ -76,6 +76,7 @@ def make_staggered_grid(deltaz, depth):
     ---------
         deltaz: Vertical grid step (m)
         depth: Maximum depth (m)
+        decimals (optional): Round floating point errors to this many decimals
 
     Returns
     -------
@@ -93,4 +94,19 @@ def make_staggered_grid(deltaz, depth):
         z[1:] + 0.5*dz,
     ]
 
+    z  = np.around(z , decimals=decimals)
+    zz = np.around(zz, decimals=decimals)
+
     return z, zz
+
+
+def significant_decimals(arr, tol=1e-10):
+    """
+    Find significant decimals neglecting floating point roundoff errors
+    """
+    n = 0
+    while not all(abs(np.round(arr)-arr) < tol):
+        arr = arr*10
+        n += 1
+
+    return n
