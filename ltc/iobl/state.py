@@ -19,6 +19,7 @@ except ImportError:
     xr = None
     warning.warn('xarray not available.')
 
+from .util import get_mixed_layer_depth_N2lim
 
 class State(param.Parameterized):
     """
@@ -150,7 +151,12 @@ class WaterColumn(State):
     A turbulent 1D water column.
     """
     mld = param.Number(default=None, doc="""
-		Mixed layer depth (m). calculated from temperature and salinity profiles""")
+		Mixed layer depth (m) below ice-ocean interface.
+        Either user-supplied or computed from state using `mld_algorithm`.""")
+
+    mld_algorithm = param.Callable(default=get_mixed_layer_depth_N2lim,
+        allow_None=True, doc="""
+        Callable that consumes a `state` instance and outputs mixed layer depth.""")
 
     lam_max = param.Number(default=None)
 
@@ -221,15 +227,6 @@ class WaterColumn(State):
     wb = param.Array(default=None, doc='Buoyancy flux (W kg-1)')
 
     Fh = param.Array(default=None, doc='Heat flux (W m-2)') # TBD double-check units
-
-
-    # TBD kinda unused
-    # n2_lim = param.Number(default=5e-5, doc="""
-    #     Critical N2 to define mixed layer depth (s-2).
-    #     """)
-
-    # mld_min = param.Number(default=4, doc="""
-        # Shallowest permitted mixed layer depth (m).""")
 
     def __init__(self, *argv, **kwarg):
         """
@@ -365,45 +362,28 @@ class WaterColumn(State):
             state.n2 = state.grav * gradrho / rhom
 
             state.rho = rho
-            state.mld = state.get_mixed_layer_depth()
+            state.set_mixed_layer_depth()
 
 
-    def get_mixed_layer_depth(self, mld_min=4, n2_lim=5e-5):
+    def set_mixed_layer_depth(self):
         """
-        Arguments
-        ---------
-            mld_min: upper limit for mixed layer depth (m)
-            n2_lim: limiting value for N^2 in the mixed layer (s-2)
-
-        Returns
-        -------
-            Last depth on mean value grid in the mixed layer
-
-        Notes
-        -----
-            If the entire model domain is unstratified, returns last bin.
-
-            Returns depth of mixed layer below ice, not below ocean surface.
+        Returns depth of mixed layer below ice (not below ocean surface).
         """
         state = self
 
-        zz, z, n2 = state.zz, state.z, state.n2
+        if self.mld_algorithm is not None:
+            mld = self.mld_algorithm(state)
+            if mld is None:
+                # Entire domain is unstratified, return domain boundary (see Fig 7.1)
+                mld = state.zz[-1]
+                msg = 'Entire domain unstratified at time step: {}.'
+                state.param.warning(msg.format(state.time))
+            state.mld = mld
 
-        with np.errstate(invalid='ignore'):
-            ix_pc = (z>=mld_min) & (n2>n2_lim)
-
-        if any(ix_pc):
-            # iml is the index of the first occurrence of N2>n2_lim on the z grid
-            iml = np.argmax(ix_pc) # True>False; argmax gives first occurence
-            # zz grid is staggered: Get last zz value where N2<=n2_lim
-            mld = zz[iml-1]
+        elif self.mld is not None:
+            state.param.message('Keeping user-supplied mixed layer depth.')
         else:
-            # Entire domain is unstratified, return domain boundary (see Fig 7.1)
-            mld = zz[-1]
-            msg = 'Entire domain unstratified at time step: {}.'
-            state.param.warning(msg.format(state.time))
-
-        return mld
+            state.param.warning('No mixed layer depth available.')
 
 
     def update_shear_driven_turbulence(self):
