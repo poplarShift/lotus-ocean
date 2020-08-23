@@ -43,10 +43,7 @@ class Stepper(param.Parameterized):
         at each time step.
         Shampine et al. 1983 quote Bragg as suggesting 1/4 + 1/2 + 1/4 (p. 167).
         This behaviour would be recovered for leapfrog_smoother=0.5.
-        Default as per pers. comm. Miles McPhee.
-        NB! If you integrate a Kalman filter into your model run, the model
-        integration will only take into account that filter's leapfrog_smoother
-        and disregard the value defined on the stepper.""")
+        Default as per pers. comm. Miles McPhee.""")
 
     tracer_viscosities = param.ListSelector(
         default=[], objects=['Km', 'Kh', 'Ks'], doc="""

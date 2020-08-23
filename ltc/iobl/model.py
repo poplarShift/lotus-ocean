@@ -142,7 +142,8 @@ class IceOceanInterfaceModel(Model):
         model = self
         state = self.state
 
-        model._update_farfield_TS(state)
+        model._update_farfield_TS()
+        model._update_interface_shear()
 
         cht, chs = model.cht, model.chs
         ustar0 = abs(state.ustar0)
@@ -228,10 +229,11 @@ class IceOceanInterfaceModel(Model):
         return model.QL * (1 - 0.03*state.Sice)
 
 
-    def _update_farfield_TS(self, state):
+    def _update_farfield_TS(self):
         """
         Update interface far-field T, S with uppermost grid cell of current state.
         """
+        state = self.state
         state.Sff = state.S[0]
         state.Tff = state.T[0]
 
@@ -244,6 +246,7 @@ class IceOceanInterfaceModel(Model):
 
         Shear at interface is governed by Law of the Wall.
         """
+        model = self
         state = self.state
 
         logratio = np.log(abs(state.zz[0]) / state.z0) / model.kappa

@@ -5,8 +5,8 @@ determined mixing length and a turbulent velocity scale.
 
 """
 
-from .util.version import read_version
-__version__ = read_version()
+from pkg_resources import get_distribution
+__version__ = get_distribution('ltc').version
 
 def link_components(**components):
     """
@@ -19,7 +19,8 @@ def link_components(**components):
         Return list of all parameters of an instance that represents
         a canonical component
         """
-        _canonical_components = ['state', 'model', 'stepper', 'run', 'observations', 'kfilter', 'forcing']
+        _canonical_components = ['state', 'model', 'stepper', 'run', 'observations',
+                                 'forcing']
         all_params = list(inst.params().keys())
         canonical_params = [p for p in all_params if p in _canonical_components]
         return canonical_params
@@ -29,7 +30,7 @@ def link_components(**components):
         Set a subset of params on an instance
         """
         subset_dict = {k: v for k, v in params.items() if k in subset_list}
-        inst.set_param(**subset_dict)
+        inst.param.set_param(**subset_dict)
         return subset_dict
 
     def _format_dict(dct):

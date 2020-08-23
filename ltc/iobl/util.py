@@ -58,3 +58,69 @@ def alpha_nr(Ri):
                          )
 
     return alpha
+
+
+def get_mixed_layer_depth_N2lim(state, mld_min=4, n2_lim=5e-5):
+    """
+    Calculate mixed layer depth using a critical N2.
+
+    Arguments
+    ---------
+        mld_min: upper limit for mixed layer depth (m)
+        n2_lim: limiting value for N^2 in the mixed layer (s-2)
+
+    Returns
+    -------
+        Last depth on mean value grid in the mixed layer
+
+    Notes
+    -----
+        If the entire model domain is unstratified, returns None.
+        Returns depth of mixed layer below ice, not below ocean surface.
+    """
+    zz, z, n2 = state.zz, state.z, state.n2
+
+    with np.errstate(invalid='ignore'):
+        ix_pc = (z>=mld_min) & (n2>n2_lim)
+
+    if any(ix_pc):
+        # iml is the index of the first occurrence of N2>n2_lim on the z grid
+        iml = np.argmax(ix_pc) # True>False; argmax gives first occurence
+        # zz grid is staggered: Get last zz value where N2<=n2_lim
+        mld = zz[iml-1]
+        return mld
+    else:
+        return None
+
+
+def get_mixed_layer_depth_sigth_crit(state, sigth_crit=0.03):
+    """
+    Calculate mixed layer depth using a critical density increase.
+
+    Arguments
+    ---------
+        sigth_crit: critical density difference between base of mixed layer
+                    and surface density
+
+    Returns
+    -------
+        Last depth on mean value grid in the mixed layer
+
+    Notes
+    -----
+        If the entire model domain is unstratified, returns None.
+        Returns depth of mixed layer below ice, not below ocean surface.
+    """
+    zz, rho = state.zz, state.rho
+
+    with np.errstate(invalid='ignore'):
+        ix_pc = (rho - rho[0]) > sigth_crit
+
+    if any(ix_pc):
+        # iml is the index of the first occurrence of N2>n2_lim on the z grid
+        iml = np.argmax(ix_pc) # True>False; argmax gives first occurence
+        # zz grid is staggered: Get last zz value where N2<=n2_lim
+        mld = zz[iml-1]
+        return mld
+    else:
+        return None
