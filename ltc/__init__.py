@@ -5,8 +5,8 @@ determined mixing length and a turbulent velocity scale.
 
 """
 
-from .util.version import read_version
-__version__ = read_version()
+from pkg_resources import get_distribution
+__version__ = get_distribution('ltc').version
 
 def link_components(**components):
     """
