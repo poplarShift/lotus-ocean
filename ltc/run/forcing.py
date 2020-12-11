@@ -86,7 +86,7 @@ class Forcing(Timeseries):
         """
         Force values of selected state parameters.
         """
-        state.set_param(**self[state.time])
+        state.param.set_param(**self[state.time])
 
         for key, fn in self._callables.items():
             setattr(state, key, fn(state))

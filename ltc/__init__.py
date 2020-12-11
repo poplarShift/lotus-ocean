@@ -30,7 +30,7 @@ def link_components(**components):
         Set a subset of params on an instance
         """
         subset_dict = {k: v for k, v in params.items() if k in subset_list}
-        inst.set_param(**subset_dict)
+        inst.param.set_param(**subset_dict)
         return subset_dict
 
     def _format_dict(dct):

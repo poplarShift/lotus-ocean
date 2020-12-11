@@ -458,7 +458,7 @@ class WaterColumn(State):
         if xr is None:
             return deepcopy(state)
         else:
-            dct = dict(state.get_param_values())
+            dct = dict(state.param.get_param_values())
 
             data = {}
 
