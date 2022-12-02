@@ -1,7 +1,7 @@
 """
 Time series of environmental forcing parameters.
 """
-from collections import Sequence
+from collections.abc import Sequence
 from copy import deepcopy
 import param
 import gsw
@@ -17,7 +17,7 @@ class Timeseries(param.Parameterized):
     Instantiate with either parameter-values or parameter-callable pairs
     """
 
-    def __init__(self, **kwarg):
+    def __init__(self, *argv, **kwarg):
         self._callables = {}
         self._values_as_series = {} # {parameter: [series]}
         self._values = {} # {timestamp: {parameter: value}}
