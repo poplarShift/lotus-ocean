@@ -39,7 +39,7 @@ class State(param.Parameterized):
     	Longitude (degrees E).
     	""")
 
-    grav = param.Number(label='g', default=9.82, doc="""
+    grav = param.Number(label='g', bounds=(-np.inf, np.inf), default=9.82, doc="""
 		Gravitational acceleration g (m s-2)""")
 
     def __init__(self, *argv, **kwarg):
@@ -334,7 +334,7 @@ class WaterColumn(State):
             while in_overturn:
                 i = in_overturn.pop() # start at deepest point
 
-                if next_index_in_same_overturn(i, in_overturn):
+                if in_overturn and next_index_in_same_overturn(i, in_overturn):
                     j = in_overturn.pop()
                     # successively go up if next index still inside overturn
                     while in_overturn and next_index_in_same_overturn(j, in_overturn):
@@ -424,15 +424,11 @@ class WaterColumn(State):
         if any(pycnocline):
             ix_pc = np.argmax(pycnocline) # True>False; first occurence
             top_of_pycnocline = (state.z > state.mld) & (state.z < state.mld+5)
+            wb_pc = np.mean(state.wb[top_of_pycnocline])
+            ustar_pc = state.ustar[ix_pc]
+            return ustar_pc, wb_pc, ix_pc
         else:
-            ix_pc = len(state.zz)-1
-            top_of_pycnocline = ix_pc
-
-        wb_pc = np.mean(state.wb[top_of_pycnocline])
-        ustar_pc = state.ustar[ix_pc]
-
-        return ustar_pc, wb_pc, ix_pc
-
+            raise RuntimeError('Cannot find the pycnocline')
 
     def init_leapfrog(self):
         """

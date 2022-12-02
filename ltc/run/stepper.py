@@ -28,8 +28,9 @@ class Stepper(param.Parameterized):
         Can presumably be sped up by vectorizing `step_field`.
     """
 
-    state = param.ClassSelector(State, allow_None=False, doc="""""")
-    model = param.ClassSelector(Model, allow_None=False, doc="""""")
+    model = param.ClassSelector(Model, allow_None=False, doc="""
+        A model that calculates turbulence parameters for a given state.""")
+
     forcing = param.ClassSelector(Forcing, default=None, doc="""""")
 
     deltat = param.Number(default=6, doc="""
@@ -50,17 +51,16 @@ class Stepper(param.Parameterized):
         List of eddy viscosities, one for each tracer and in the same order.
         """)
 
-
     def step(self, **kwarg):
         """
         Step the state using a given model and forcing.
         """
         stepper = self
-        state   = self.state
-        model   = self.model
-        forcing = self.forcing
+        forcing = stepper.forcing
+        model   = stepper.model
+        state   = model.state
 
-        self.param.debug('Time: {}\n'.format(state.time))
+        stepper.param.debug('Time: {}\n'.format(state.time))
 
         if forcing is not None:
             # release readonly
@@ -69,25 +69,20 @@ class Stepper(param.Parameterized):
         model.adjust_model_parameters()
 
         # TBD could have some mechanism that prevents parameters from updating if they were already set by forcing... !
-        stepper._update_state(**kwarg) # Need implementation in subclass
+        stepper._update_state() # Need implementation in subclass
 
         # Step integration
-        stepper._step_time(**kwarg)
-        stepper._step_fields(**kwarg) # Need implementation in subclass
-
+        stepper._step_time()
+        stepper._step_fields() # Need implementation in subclass
 
     def _step_time(self, **kwarg):
-        stepper = self
-        self.state.time += stepper.deltat/24
-
+        self.model.state.time += self.deltat/24
 
     def _step_fields(self, **kwarg):
         raise NotImplementedError('Please implement in a subclass')
 
-
     def _update_state(self, **kwarg):
         raise NotImplementedError('Please implement in a subclass')
-
 
     def get_specs(self, var):
         """
@@ -106,7 +101,7 @@ class Stepper(param.Parameterized):
         """
         stepper = self
         model = stepper.model
-        state = stepper.state
+        state = model.state
 
         # twice the fundamental time step, now in seconds:
         dt2 = 2 * stepper.deltat * 3600
@@ -169,16 +164,12 @@ class Stepper(param.Parameterized):
             'btm_bc_kind': btm_bc_kind,
         }
 
-
     def _step_field(self, var, **kwarg):
         """
         respect source function Q=Q(z), e.g. solar radiation
         """
         stepper = self
-        state = self.state
-        model = self.model
-
-        specs = self.get_specs(var)
+        specs = stepper.get_specs(var)
 
         theta = specs['theta']
         theta_jm1 = specs['theta_jm1']
@@ -288,7 +279,6 @@ class Stepper(param.Parameterized):
 
         return theta
 
-
     @staticmethod
     def _solve_leapfrog_coriolis(theta_jm1, dt2, fcor, dz, dzz, K, Q, F0):
         """
@@ -353,8 +343,9 @@ class TempSalStepper(Stepper):
 
     def _update_state(self, **kwarg):
         stepper = self
-        model = self.model
-        model.update_ctd()
+        model = stepper.model
+        state = model.state
+        state.update_ctd()
         model.update_interface()
         model.find_steady_k() # new Km (and current field)
 
@@ -372,8 +363,8 @@ class TempSalVelStepper(Stepper):
 
     def _update_state(self, **kwarg):
         stepper = self
-        model = self.model
-        state = self.state
-        model.update_ctd()
-        model.update_interface(state=state)
-        model.update_turbulence(state=state)
+        model = stepper.model
+        state = model.state
+        state.update_ctd()
+        model.update_interface()
+        model.update_turbulence()

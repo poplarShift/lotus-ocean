@@ -27,14 +27,8 @@ class ModelRun(param.Parameterized):
     initial model state.
     """
 
-    state = param.ClassSelector(State, allow_None=False, doc="""
-        Physical variables determining the state of the turbulent oceanic boundary
-        layer.""")
-    model = param.ClassSelector(Model, allow_None=False, doc="""
-        A model that calculates turbulence parameters for a given state.""")
     stepper = param.ClassSelector(Stepper, allow_None=False, doc="""
         """)
-    forcing = param.ClassSelector(Forcing, default=None, doc="""""")
 
     duration = param.Number(default=0, doc="""
         Duration of model run (days).""")
@@ -49,7 +43,6 @@ class ModelRun(param.Parameterized):
         self._states = []
         # self.execute()
 
-
     @property
     def states(self):
         run = self
@@ -63,11 +56,10 @@ class ModelRun(param.Parameterized):
         """
         Run the model for a given number of days.
         """
-
-        model   = self.model
-        state   = self.state
-        forcing = self.forcing
         stepper = self.stepper
+        forcing = stepper.forcing
+        model   = stepper.model
+        state   = model.state
 
         self._states = []
         stop_time = state.time + self.duration
@@ -88,4 +80,4 @@ class ModelRun(param.Parameterized):
         self._write_output()
 
     def _write_output(self):
-        self._states.append(self.state.output_state())
+        self._states.append(self.stepper.model.state.output_state())

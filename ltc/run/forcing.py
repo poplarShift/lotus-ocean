@@ -1,13 +1,26 @@
 """
 Time series of environmental forcing parameters.
 """
-from collections import Sequence
+from collections.abc import Sequence
 from copy import deepcopy
 import param
 import gsw
-import numpy as np
+import numpy as np, pandas as pd
 
-from ..util.time import Time
+from ..util.time import Time, as_float
+
+def _interpolate_by_index(df, on_values):
+    """
+    Interpolate a dataframe `df` on values `on_values` of its index.
+    """
+
+    return (
+        df
+        .merge(pd.DataFrame(None, pd.Index(on_values, name=df.index.name), dtype=float), left_index=True, right_index=True, how='outer', sort=True)
+        .interpolate(method='index') # interpolate on index values
+        .fillna(method='bfill') # pad uppermost values
+        .reindex(on_values) # only retain the new indices
+    )
 
 
 class Timeseries(param.Parameterized):
@@ -17,65 +30,75 @@ class Timeseries(param.Parameterized):
     Instantiate with either parameter-values or parameter-callable pairs
     """
 
-    def __init__(self, **kwarg):
-        self._callables = {}
-        self._values_as_series = {} # {parameter: [series]}
-        self._values = {} # {timestamp: {parameter: value}}
+    def __init__(self, time=None, **kwarg):
+        self.callables = {}
+        self.data = pd.DataFrame(index=time)
 
-        self._validate_kwargs(kwarg)
+        self.update(**kwarg)
 
-        for param, value in kwarg.items():
+    def update(self, **kwarg):
+        """
+        """
+        for key, value in kwarg.items():
             if callable(value):
-                self._callables[param] = value
+                if key in self.data:
+                    self.data.pop(key)
+                self.callables[key] = value
             else:
-                self._values_as_series[param] = value
-            setattr(self, param, value)
+                self.callables.pop(key, None)
+                self.data[key] = value
+        assert not set(self.callables) & set(self.data.columns)
 
-        self._prepare_value_forcing()
+    @classmethod
+    def from_dataframe(cls, df):
+        df = df.copy()
+        if 'time' in df:
+            time = df.pop('time')
+        else:
+            time = df.index
+        new = cls(time=time)
+        new.update(**df)
+        return new
 
+    def update_from_dataframe(self, df):
+        if not self.data.index.equals(df.index):
+            df = _interpolate_on_column(df, self.data.index)
+            self.param.message('Interpolating new data to existing index')
+        self.update(**df)
 
     def __getitem__(self, time):
-        try:
-            return {**self._values[time], **self._callables}
-        except KeyError:
-            try:
-                return {**self._values[time.value], **self._callables}
-            except KeyError:
-                return None
+        if isinstance(time, Time):
+            time = time.value
 
+        results = {}
 
-    @staticmethod
-    def _validate_kwargs(kwarg):
-        if 'time' not in kwarg:
-            raise ValueError('Need to supply time stamps')
-        if len(set(len(vals)
-            for vals in kwarg.values()
-            if isinstance(vals, Sequence)
-           )) > 1:
-            raise ValueError('All time series must have same length')
+        for key, callable_ in self.callables.items():
+            results[key] = callable_(time)
 
+        for key, series in self.data.items():
+            if pd.Timestamp(time) in series.index:
+                results[key] = series.loc[time]
+            else:
+                self.param.debug(f'Interpolating at time {time}')
+                results[key] = np.interp(
+                    as_float(time),
+                    as_float(series.index.values),
+                    series.values,
+                )
 
-    def _prepare_value_forcing(self):
-        """
-        Format forcing from time series data
-        to the form {timestamp: {parameter: value}}.
+        return results
 
-        Note
-        ----
-            dictionary lookup is significantly slower than list indexing, but
-            obviates need to carry details of anticipated model run
-            in state or forcing instance.
-        """
-        timestamps = self._values_as_series.pop('time')
-        dict_of_dicts = {}
+    @property
+    def time(self):
+        return self.data.index.values
 
-        for i, time in enumerate(timestamps):
-            dict_of_dicts[time] = {
-                key: values[i]
-                for key, values in self._values_as_series.items()
-            }
-
-        self._values = dict_of_dicts
+    def __getattr__(self, attr):
+        if attr in self.data:
+            return self.data[attr]
+        elif attr in self.callables:
+            return self.callables[attr]
+        else:
+            raise AttributeError
 
 
 class Forcing(Timeseries):
@@ -88,5 +111,5 @@ class Forcing(Timeseries):
         """
         state.param.set_param(**self[state.time])
 
-        for key, fn in self._callables.items():
+        for key, fn in self.callables.items():
             setattr(state, key, fn(state))
