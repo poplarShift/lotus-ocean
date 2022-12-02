@@ -5,9 +5,6 @@ determined mixing length and a turbulent velocity scale.
 
 """
 
-from pkg_resources import get_distribution
-__version__ = get_distribution('ltc').version
-
 def link_components(**components):
     """
     Relying on the canonical naming conventions in the different classes,

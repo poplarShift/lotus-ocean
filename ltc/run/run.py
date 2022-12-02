@@ -12,6 +12,7 @@ from .stepper import Stepper
 from .forcing import Forcing
 from ..iobl.state import State
 from ..iobl.model import Model
+from ..iobl.scenario import Scenario
 
 try:
     import xarray as xr
@@ -19,7 +20,7 @@ except ImportError:
     xr = None
     warning.warn('xarray not available.')
 
-class ModelRun(param.Parameterized):
+class ModelRun(Scenario):
     """
     Set up and execute a model run.
 
@@ -27,13 +28,9 @@ class ModelRun(param.Parameterized):
     initial model state.
     """
 
-    state = param.ClassSelector(State, allow_None=False, doc="""
-        Physical variables determining the state of the turbulent oceanic boundary
-        layer.""")
-    model = param.ClassSelector(Model, allow_None=False, doc="""
-        A model that calculates turbulence parameters for a given state.""")
     stepper = param.ClassSelector(Stepper, allow_None=False, doc="""
         """)
+
     forcing = param.ClassSelector(Forcing, default=None, doc="""""")
 
     duration = param.Number(default=0, doc="""
@@ -48,7 +45,6 @@ class ModelRun(param.Parameterized):
         super().__init__(*argv, **kwarg)
         self._states = []
         # self.execute()
-
 
     @property
     def states(self):
@@ -81,7 +77,7 @@ class ModelRun(param.Parameterized):
             if self.write_output_step and not itcount % self.write_output_step:
                 self._write_output()
 
-            stepper.step()
+            stepper.step(scenario=self)
 
             itcount += 1
 

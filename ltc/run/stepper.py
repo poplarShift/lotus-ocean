@@ -28,10 +28,6 @@ class Stepper(param.Parameterized):
         Can presumably be sped up by vectorizing `step_field`.
     """
 
-    state = param.ClassSelector(State, allow_None=False, doc="""""")
-    model = param.ClassSelector(Model, allow_None=False, doc="""""")
-    forcing = param.ClassSelector(Forcing, default=None, doc="""""")
-
     deltat = param.Number(default=6, doc="""
 		Time step (h)""")
 
@@ -50,46 +46,46 @@ class Stepper(param.Parameterized):
         List of eddy viscosities, one for each tracer and in the same order.
         """)
 
-
-    def step(self, **kwarg):
+    @staticmethod
+    def step(scenario, **kwarg):
         """
         Step the state using a given model and forcing.
         """
-        stepper = self
-        state   = self.state
-        model   = self.model
-        forcing = self.forcing
+        stepper = scenario.stepper
+        state   = scenario.state
+        model   = scenario.model
+        forcing = scenario.forcing
 
-        self.param.debug('Time: {}\n'.format(state.time))
+        stepper.param.debug('Time: {}\n'.format(state.time))
 
         if forcing is not None:
             # release readonly
             forcing.force(state)
             # TBD could set readonly-attributes in forcing.force
-        model.adjust_model_parameters()
+        model.adjust_model_parameters(scenario)
 
         # TBD could have some mechanism that prevents parameters from updating if they were already set by forcing... !
-        stepper._update_state(**kwarg) # Need implementation in subclass
+        stepper._update_state(scenario=scenario) # Need implementation in subclass
 
         # Step integration
-        stepper._step_time(**kwarg)
-        stepper._step_fields(**kwarg) # Need implementation in subclass
+        stepper._step_time(scenario=scenario)
+        stepper._step_fields(scenario=scenario) # Need implementation in subclass
 
+    @staticmethod
+    def _step_time(scenario, **kwarg):
+        scenario.state.time += scenario.stepper.deltat/24
 
-    def _step_time(self, **kwarg):
-        stepper = self
-        self.state.time += stepper.deltat/24
+    @staticmethod
+    def _step_fields(scenario, **kwarg):
+        raise NotImplementedError('Please implement in a subclass')
 
-
-    def _step_fields(self, **kwarg):
+    @staticmethod
+    def _update_state(scenario, **kwarg):
         raise NotImplementedError('Please implement in a subclass')
 
 
-    def _update_state(self, **kwarg):
-        raise NotImplementedError('Please implement in a subclass')
-
-
-    def get_specs(self, var):
+    @staticmethod
+    def get_specs(scenario, var):
         """
         Supply specifications for time integration.
 
@@ -104,9 +100,9 @@ class Stepper(param.Parameterized):
             btm_bc_val: bottom boundary prescribed value
             btm_bc_kind: bottom boundary condition type
         """
-        stepper = self
-        model = stepper.model
-        state = stepper.state
+        stepper = scenario.stepper
+        model = scenario.model
+        state = scenario.state
 
         # twice the fundamental time step, now in seconds:
         dt2 = 2 * stepper.deltat * 3600
@@ -170,15 +166,13 @@ class Stepper(param.Parameterized):
         }
 
 
-    def _step_field(self, var, **kwarg):
+    @staticmethod
+    def _step_field(scenario, var, **kwarg):
         """
         respect source function Q=Q(z), e.g. solar radiation
         """
-        stepper = self
-        state = self.state
-        model = self.model
-
-        specs = self.get_specs(var)
+        stepper = scenario.stepper
+        specs = stepper.get_specs(scenario, var)
 
         theta = specs['theta']
         theta_jm1 = specs['theta_jm1']
@@ -346,17 +340,19 @@ class TempSalStepper(Stepper):
     Step T, S fields using the steady LTC solution at each time step.
     """
 
-    def _step_fields(self, **kwarg):
-        stepper = self
-        stepper._step_field(var='T', **kwarg)
-        stepper._step_field(var='S', **kwarg)
+    @staticmethod
+    def _step_fields(scenario, **kwarg):
+        stepper = scenario.stepper
+        stepper._step_field(scenario=scenario, var='T', **kwarg)
+        stepper._step_field(scenario=scenario, var='S', **kwarg)
 
-    def _update_state(self, **kwarg):
-        stepper = self
-        model = self.model
-        model.update_ctd()
-        model.update_interface()
-        model.find_steady_k() # new Km (and current field)
+    @staticmethod
+    def _update_state(scenario, **kwarg):
+        state = scenario.state
+        model = scenario.model
+        state.update_ctd()
+        model.update_interface(scenario=scenario)
+        model.find_steady_k(scenario=scenario) # new Km (and current field)
 
 
 class TempSalVelStepper(Stepper):
@@ -364,16 +360,18 @@ class TempSalVelStepper(Stepper):
     Step T, S, u, v fields using the full momentum equation.
     """
 
-    def _step_fields(self, **kwarg):
-        stepper = self
-        stepper._step_field(var='U', **kwarg)
-        stepper._step_field(var='T', **kwarg)
-        stepper._step_field(var='S', **kwarg)
+    @staticmethod
+    def _step_fields(scenario, **kwarg):
+        stepper = scenario.stepper
+        stepper._step_field(scenario=scenario, var='U', **kwarg)
+        stepper._step_field(scenario=scenario, var='T', **kwarg)
+        stepper._step_field(scenario=scenario, var='S', **kwarg)
 
-    def _update_state(self, **kwarg):
-        stepper = self
-        model = self.model
-        state = self.state
-        model.update_ctd()
-        model.update_interface(state=state)
-        model.update_turbulence(state=state)
+    @staticmethod
+    def _update_state(scenario, **kwarg):
+        stepper = scenario.stepper
+        model = scenario.model
+        state = scenario.state
+        state.update_ctd()
+        model.update_interface(scenario=scenario)
+        model.update_turbulence(scenario=scenario)
