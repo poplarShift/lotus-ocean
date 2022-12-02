@@ -1,0 +1,28 @@
+name: ltc
+channels:
+  - conda-forge
+dependencies:
+  - bokeh
+  - cartopy
+  - cmocean
+  - jupyterlab
+  - gsw
+  - holoviews
+  - hvplot
+  - mamba
+  - matplotlib
+  - netcdf4
+  - numpy
+  - pandas
+  - panel==0.14.1
+  - pip
+  - scipy
+  - xarray
+
+
+
+# run as: $ mamba env create -f binder/environment.yml
+
+# remove: $ conda remove --name ltc --all
+
+# afterwards, run $ bash binder/postBuild
