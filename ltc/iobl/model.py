@@ -30,13 +30,15 @@ class Model(param.Parameterized):
     TBD move parameters to where they are needed!
     """
 
+    _default_bounds = (-np.inf, np.inf)
+
     # Refs
-    cht = param.Number(default=None, doc="""
+    cht = param.Number(default=None, bounds=_default_bounds, doc="""
         Interface heat transfer coefficient (-). For a stable or neutral boundary
         layer, this may be around 9.3e-3, for freezing ice around 5.7e-3.
         """)
 
-    chs = param.Number(default=None, doc="""
+    chs = param.Number(default=None, bounds=_default_bounds, doc="""
         Interface salt transfer coefficient (-). For a stable or neutral boundary
         layer, this may be around 2.7e-4, for freezing ice around 5.7e-3.
         """)
@@ -45,48 +47,48 @@ class Model(param.Parameterized):
         Latitude (degrees N).
         """)
 
-    fcor = param.Number(default=None, doc="""
+    fcor = param.Number(default=None, bounds=_default_bounds, doc="""
         Coriolis frequency (s-1)""")
 
     # TBD
-    km_min = param.Number(default=1.8e-6, doc="""Minimum vertical eddy viscosity
-    (m2 s-1). In practice, the molecular viscosity.""")
+    km_min = param.Number(default=1.8e-6, bounds=_default_bounds, doc="""Minimum
+    vertical eddy viscosity (m2 s-1). In practice, the molecular viscosity.""")
 
-    kh_min = param.Number(default=1.3e-7, doc="""Minimum vertical eddy
-    diffusivity of heat (m2 s-1). In practice, molecular heat diffusivity.""")
+    kh_min = param.Number(default=1.3e-7, bounds=_default_bounds, doc="""Minimum
+    vertical eddy diffusivity of heat (m2 s-1). In practice, molecular heat diffusivity.""")
     #TBD double check!
 
     # TBD are these even used??
-    km_max = param.Number(default=2, doc="""
+    km_max = param.Number(default=2, bounds=_default_bounds, doc="""
         km_max""")
 
-    kh_max = param.Number(default=2, doc="""
+    kh_max = param.Number(default=2, bounds=_default_bounds, doc="""
         kh_max""")
 
     # Find ref in book
-    K_adjust = param.Number(default=0.005, doc="""
+    K_adjust = param.Number(default=0.005, bounds=_default_bounds, doc="""
         Eddy diffusivity for N2<0 below mixed layer""")
 
-    Ks_Kh_ratio = param.Number(default=1, doc="""
+    Ks_Kh_ratio = param.Number(default=1, bounds=_default_bounds, doc="""
         Ks/Kh ratio (-).""") # p. 142
 
-    kappa = param.Number(default=0.4, doc="""
+    kappa = param.Number(default=0.4, bounds=_default_bounds, doc="""
         von Kármán constant (-)""")
 
-    lam_star = param.Number(default=0.028, doc="""
+    lam_star = param.Number(default=0.028, bounds=_default_bounds, doc="""
         Lambda star, Λ* (-). References: p.77: 0.024""")
 
-    RC = param.Number(default=0.2, doc="""
+    RC = param.Number(default=0.2, bounds=_default_bounds, doc="""
         Critical flux Richardson number""")
 
-    cml = param.Number(default=0.2, doc="""
+    cml = param.Number(default=0.2, bounds=_default_bounds, doc="""
         Constant relating convective mixing length to  mixed layer depth, around 0.2 to 0.4""") # pp. 142
 
     use_three_eqn = param.Boolean(default=True, doc="""
         Whether to use the 3-eq. boundary conditions instead of the 2-eq. approach.
         The 2-eq. approach is equivalent to a bulk Stanton number parameterization with St* = cht.""")
 
-    QL = param.Number(default=83.8, doc="""
+    QL = param.Number(default=83.8, bounds=_default_bounds, doc="""
         Latent heat of melting for fresh ice divided by specific heat of seawater (K)""")
 
     adjustments = param.List(

@@ -39,7 +39,7 @@ class State(param.Parameterized):
     	Longitude (degrees E).
     	""")
 
-    grav = param.Number(label='g', default=9.82, doc="""
+    grav = param.Number(label='g', bounds=(-np.inf, np.inf), default=9.82, doc="""
 		Gravitational acceleration g (m s-2)""")
 
     def __init__(self, *argv, **kwarg):
