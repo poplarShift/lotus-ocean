@@ -97,6 +97,14 @@ class Model(param.Parameterized):
 
     def __init__(self, *argv, **kwarg):
         super().__init__(*argv, **kwarg)
+        self._update_fcor()
+
+    @param.depends('latitude', watch=True)
+    def _update_fcor(self):
+        """
+        Another option is to set fcor dynamically at call time, e.g.:
+        self.fcor = lambda: gsw.f(self.latitude)  # in __init___
+        """
         self.fcor = gsw.f(self.latitude)
 
     @staticmethod

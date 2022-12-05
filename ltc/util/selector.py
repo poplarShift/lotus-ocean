@@ -11,25 +11,22 @@ class InstanceSelector:
     def __init__(self, selector_fn, selector_args):
         self._selector_fn = selector_fn
         self._selector_args = selector_args
-        self.select_active()
-
+        super().__getattribute__('select_active')()
 
     def select_active(self):
         """
         Set appropriate instance to active
         """
-        fn = self._selector_fn
-        args = self._selector_args
+        fn = super().__getattribute__('_selector_fn')
+        args = super().__getattribute__('_selector_args')
+        # super().__setattr__('active', fn(**args))
         self.active = fn(**args)
 
-
-    def __getattr__(self, attr):
+    def __getattribute__(self, attr):
         """
         Wrap any attribute of the underlying instance.
         Activates appropriate instance on the fly.
         """
-        if not hasattr(self.active, attr):
-            raise AttributeError
-
-        self.select_active()
-        return getattr(self.active, attr)
+        super().__getattribute__('select_active')()
+        active = super().__getattribute__('active')
+        return getattr(active, attr)
