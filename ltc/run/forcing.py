@@ -43,7 +43,6 @@ class Timeseries(param.Parameterized):
             except KeyError:
                 return None
 
-
     @staticmethod
     def _validate_kwargs(kwarg):
         if 'time' not in kwarg:

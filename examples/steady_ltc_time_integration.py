@@ -1,3 +1,9 @@
+import sys, os
+cwd = os.path.dirname(__file__)
+ltc_base_path = os.path.join(cwd, '../../ltc-base')
+if ltc_base_path not in sys.path:
+    sys.path.insert(0, ltc_base_path)
+
 import pandas as pd, numpy as np, param
 
 from ltc.run.run import ModelRun
@@ -22,6 +28,7 @@ state = IceOceanBoundaryLayer.from_ctd(
 )
 
 model = LTCModel(
+    state=state,
     latitude=78,
     cht=0.0093,
     chs=0.0057,
@@ -32,11 +39,6 @@ model = LTCModel(
     S_btm_bc=0,
 )
 
-stepper = TempSalStepper(
-    deltat=6,
-    leapfrog_smoother=0.1,
-)
-
 forcing = Forcing(
     time=np.r_[0, np.cumsum(np.ones(1000-1)/4)],
 #     ustar0=np.r_[.01*np.ones(12), 0.001*np.ones(1000)],
@@ -44,12 +46,19 @@ forcing = Forcing(
     qcond=lambda state: 1e-6
 )
 
+stepper = TempSalStepper(
+    model=model, forcing=forcing,
+    deltat=6,
+    leapfrog_smoother=0.1,
+)
+
+model.steady_ltc()
+state.init_leapfrog()
+
 scenario = ModelRun(
-    model=model, state=state, stepper=stepper, forcing=forcing,
+    stepper=stepper,
     write_output_step=1, duration=10,
 )
-scenario.steady_ltc()
-scenario.state.init_leapfrog()
 
 with param.logging_level('WARNING'):
     scenario.execute()

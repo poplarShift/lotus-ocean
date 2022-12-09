@@ -12,7 +12,6 @@ from .stepper import Stepper
 from .forcing import Forcing
 from ..iobl.state import State
 from ..iobl.model import Model
-from ..iobl.scenario import Scenario
 
 try:
     import xarray as xr
@@ -20,7 +19,7 @@ except ImportError:
     xr = None
     warning.warn('xarray not available.')
 
-class ModelRun(Scenario):
+class ModelRun(param.Parameterized):
     """
     Set up and execute a model run.
 
@@ -30,8 +29,6 @@ class ModelRun(Scenario):
 
     stepper = param.ClassSelector(Stepper, allow_None=False, doc="""
         """)
-
-    forcing = param.ClassSelector(Forcing, default=None, doc="""""")
 
     duration = param.Number(default=0, doc="""
         Duration of model run (days).""")
@@ -59,11 +56,10 @@ class ModelRun(Scenario):
         """
         Run the model for a given number of days.
         """
-
-        model   = self.model
-        state   = self.state
-        forcing = self.forcing
         stepper = self.stepper
+        forcing = stepper.forcing
+        model   = stepper.model
+        state   = model.state
 
         self._states = []
         stop_time = state.time + self.duration
@@ -77,11 +73,11 @@ class ModelRun(Scenario):
             if self.write_output_step and not itcount % self.write_output_step:
                 self._write_output()
 
-            stepper.step(scenario=self)
+            stepper.step()
 
             itcount += 1
 
         self._write_output()
 
     def _write_output(self):
-        self._states.append(self.state.output_state())
+        self._states.append(self.stepper.model.state.output_state())

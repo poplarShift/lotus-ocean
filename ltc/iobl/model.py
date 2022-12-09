@@ -16,7 +16,7 @@ import param
 import gsw
 import numpy as np
 
-from ..iobl.state import State
+from .state import State
 from .util import get_transfer_coefficients, convective_vel_scale, alpha_nr
 from ..util.time import Time
 
@@ -29,6 +29,10 @@ class Model(param.Parameterized):
     Holds global parameters on the model.
     TBD move parameters to where they are needed!
     """
+
+    state = param.ClassSelector(State, allow_None=False, doc="""
+        Physical variables determining the state of the turbulent oceanic boundary
+        layer.""")
 
     _default_bounds = (-np.inf, np.inf)
 
@@ -82,7 +86,7 @@ class Model(param.Parameterized):
         Critical flux Richardson number""")
 
     cml = param.Number(default=0.2, bounds=_default_bounds, doc="""
-        Constant relating convective mixing length to  mixed layer depth, around 0.2 to 0.4""") # pp. 142
+        Constant relating convective mixing length to mixed layer depth, around 0.2 to 0.4""") # pp. 142
 
     use_three_eqn = param.Boolean(default=True, doc="""
         Whether to use the 3-eq. boundary conditions instead of the 2-eq. approach.
@@ -99,6 +103,10 @@ class Model(param.Parameterized):
 
     def __init__(self, *argv, **kwarg):
         super().__init__(*argv, **kwarg)
+        if self.state is not None:
+            if self.state.latitude != self.latitude:
+                self.param.warning(f"""Latitudes
+                differ: {self.state.latitude} in state, {self.latitude} in model""")
         self._update_fcor()
 
     @param.depends('latitude', watch=True)
@@ -109,13 +117,12 @@ class Model(param.Parameterized):
         """
         self.fcor = gsw.f(self.latitude)
 
-    @staticmethod
-    def adjust_model_parameters(scenario, **kwarg):
+    def adjust_model_parameters(self, **kwarg):
         """
         Tune the model according to the state.
         """
-        model = scenario.model
-        state = scenario.state
+        model = self
+        state = model.state
 
         if model.adjustments is not None:
             for hook in model.adjustments:
@@ -124,7 +131,7 @@ class Model(param.Parameterized):
                     setattr(model, key, val)
 
             state.update_ctd()
-            model.update_interface(scenario=scenario)
+            model.update_interface()
 
 
 class IceOceanInterfaceModel(Model):
@@ -132,18 +139,17 @@ class IceOceanInterfaceModel(Model):
     Calculate ice-ocean fluxes.
     """
 
-    @staticmethod
-    def update_interface(scenario, **kwarg):
+    def update_interface(self, **kwarg):
         """"
         Calculate wT0, wS0, wb0, w_interface
 
         See Figure 6.2,  7.2
         """
-        model = scenario.model
-        state = scenario.state
+        model = self
+        state = model.state
 
-        model._update_farfield_TS(scenario)
-        model._update_interface_shear(scenario)
+        model._update_farfield_TS()
+        model._update_interface_shear()
 
         cht, chs = model.cht, model.chs
         ustar0 = abs(state.ustar0)
@@ -177,7 +183,7 @@ class IceOceanInterfaceModel(Model):
         else:
             # TBD use bulk stanton number? provide util that
             # gives wT0, wS0, wb0 from St* parameterization?
-            QL = model.get_haline_QL(scenario=scenario)
+            QL = model.get_haline_QL()
             if model.use_three_eqn:
                 # Eqns 6.8, 6.9
                 # Neglect difference between interface pressure and ice draft
@@ -215,33 +221,28 @@ class IceOceanInterfaceModel(Model):
             beta = gsw.beta(state.S0, state.T0, state.hice)
             state.wb0 = state.grav*(beta * state.wS0 - alpha * state.wT0)
 
-
-    @staticmethod
-    def get_haline_QL(scenario, **kwarg):
+    def get_haline_QL(self, **kwarg):
         """
         TBD refactor this to model? In that case take Sice from forcing, not
         self or model
 
         Maykut (1985, his equations 6.13 and 19)
         """
-        model = scenario.model
-        state = scenario.state
+        model = self
+        state = model.state
 
         return model.QL * (1 - 0.03*state.Sice)
 
-
-    @staticmethod
-    def _update_farfield_TS(scenario):
+    def _update_farfield_TS(self):
         """
         Update interface far-field T, S with uppermost grid cell of current state.
         """
-        state = scenario.state
+        model = self
+        state = model.state
         state.Sff = state.S[0]
         state.Tff = state.T[0]
 
-
-    @staticmethod
-    def _update_interface_shear(scenario, **kwarg):
+    def _update_interface_shear(self, **kwarg):
         """
         TBD calculate with aux?
 
@@ -249,8 +250,8 @@ class IceOceanInterfaceModel(Model):
 
         Shear at interface is governed by Law of the Wall.
         """
-        model = scenario.model
-        state = scenario.state
+        model = self
+        state = model.state
 
         logratio = np.log(abs(state.zz[0]) / state.z0) / model.kappa
         state.delU = state.ustar0 * logratio
@@ -261,16 +262,15 @@ class MixingLengthModel(Model):
     Calculate a vertical profile of mixing lengths.
     """
 
-    @staticmethod
-    def update_mixing_length(scenario, **kwarg):
+    def update_mixing_length(self, **kwarg):
         """
         Calculate mixing length based on ustar using empirical models such as
         `_mixing_length_stable` and `_mixing_length_unstable`.
 
         See Figure 7.2.
         """
-        model = scenario.model
-        state = scenario.state
+        model = self
+        state = model.state
 
         # Use eddy haline diffusivity for buoyancy flux
         state.wb = state.Ks * state.n2
@@ -282,7 +282,7 @@ class MixingLengthModel(Model):
         if state.wb0 >= 0:
             # Neutral or melting
             state.lam_max = lam_max_similarity
-            lam = model._mixing_length_stable(scenario=scenario)
+            lam = model._mixing_length_stable()
         elif state.wb0 < 0:
             """
             Adjust the mixing length to the unstable scenario.
@@ -296,7 +296,7 @@ class MixingLengthModel(Model):
                 # TBD double check this, why whould you not set lam_max to kappa*mld throughout??
                 state.lam_max = lam_max_similarity
 
-            lam = model._mixing_length_unstable(scenario=scenario)
+            lam = model._mixing_length_unstable()
         else:
             raise ValueError
 
@@ -312,7 +312,6 @@ class MixingLengthModel(Model):
         state.lam      = lam
         state.ustar_pc = ustar_pc
         state.wb_pc    = wb_pc
-
 
     def _max_mixing_length_similarity(self, ustar, wb):
         """
@@ -347,16 +346,14 @@ class MixingLengthModel(Model):
 
         return lam_max, lobuk
 
-
-    @staticmethod
-    def _mixing_length_stable(scenario, **kwarg):
+    def _mixing_length_stable(self, **kwarg):
         """
         Calculate mixed-layer mixing length for neutral or stable stratification.
 
         Figure 7.2, right hand side.
         """
-        model = scenario.model
-        state = scenario.state
+        model = self
+        state = model.state
 
         # TBD rename such that name reflects that this is for mixed layer incl.
         # surface layer / Law of the Wall
@@ -367,16 +364,14 @@ class MixingLengthModel(Model):
 
         return lam
 
-
-    @staticmethod
-    def _mixing_length_unstable(scenario, **kwarg):
+    def _mixing_length_unstable(self, **kwarg):
         """
         Calculate mixed-layer mixing length for a convective boundary layer.
 
         Figure 7.2, left hand side.
         """
-        model = scenario.model
-        state = scenario.state
+        model = self
+        state = model.state
 
         wstar = convective_vel_scale(abs(state.ustar0), state.wb0, model.cml, state.mld)
 
@@ -397,8 +392,7 @@ class EddyCoefficientModel(Model):
     eddy diffusivities.
     """
 
-    @staticmethod
-    def update_eddy_coefficients(scenario, **kwarg):
+    def update_eddy_coefficients(self, **kwarg):
         """
         Update vertical eddy viscosity and diffusivity.
 
@@ -406,8 +400,8 @@ class EddyCoefficientModel(Model):
 
         TBD add internal wave spectra in here? or when ustar is computed? How to do this in external module?
         """
-        model = scenario.model
-        state = scenario.state
+        model = self
+        state = model.state
 
         # --- ACTUAL LTC
         # now update the K fields
@@ -530,29 +524,25 @@ class LTCModel(
     S_source = param.Array(default=None, doc='')
     tracer_source = param.Array(default=None, doc='')
 
-
-    @staticmethod
-    def update_turbulence(scenario, **kwarg):
-        model = scenario.model
-        state = scenario.state
+    def update_turbulence(self, **kwarg):
+        model = self
+        state = model.state
 
         state.update_shear_driven_turbulence() # new ustar
-        model.update_mixing_length(scenario=scenario) # new lambda
-        model.update_eddy_coefficients(scenario=scenario) # new Km, Kh, Ks
+        model.update_mixing_length() # new lambda
+        model.update_eddy_coefficients() # new Km, Kh, Ks
 
-
-    @staticmethod
-    def find_steady_k(scenario, **kwarg):
+    def find_steady_k(self, **kwarg):
         """
         Find an iterative solution to the boundary layer problem.
         """
-        model = scenario.model
-        state = scenario.state
+        model = self
+        state = model.state
 
         for j in range(model.maxit):
             old_state = deepcopy(state)
-            model.update_turbulence(scenario=scenario)
-            model._solve_steady_ekman(scenario=scenario) # calculate new currents
+            model.update_turbulence()
+            model._solve_steady_ekman() # calculate new currents
             # Do at least two iterations
             if j > 2 and model._has_converged(state, old_state):
                 return
@@ -561,7 +551,6 @@ class LTCModel(
             state.time
         ))
 
-
     def _has_converged(self, state, old_state):
         model = self
         if np.nanmean(abs((state.Km - old_state.Km) / state.Km)) < model.tol:
@@ -569,9 +558,7 @@ class LTCModel(
         else:
             return False
 
-
-    @staticmethod
-    def _solve_steady_ekman(scenario, **kwarg):
+    def _solve_steady_ekman(self, **kwarg):
         """
         Solve the steady Ekman equation for horizontal velocity.
 
@@ -579,8 +566,8 @@ class LTCModel(
 
         Ch. 7.3
         """
-        model = scenario.model
-        state = scenario.state
+        model = self
+        state = model.state
 
         if model.U_source is not None:
             raise NotImplementedError('Does not currently respect U_source') #TBD
@@ -623,15 +610,13 @@ class LTCModel(
 
         state.U = u
 
-
-    @staticmethod
-    def init_ekman_spiral(scenario, **kwarg):
+    def init_ekman_spiral(self, **kwarg):
         """
         Make a reasonable guess for a boundary layer with a constant
         eddy viscosity. Does not include a pycnocline or a Law-of-the-Wall regime.
         """
-        model = scenario.model
-        state = scenario.state
+        model = self
+        state = model.state
 
         if state.wb0 >= 0:
             lam_max, _ = model._max_mixing_length_similarity(abs(state.ustar0), state.wb0)
@@ -657,3 +642,9 @@ class LTCModel(
         state.U = U0 * np.exp(-delta * state.zz)
         # state.solve_steady_ekman() # u, v, U
         state.update_shear_driven_turbulence()
+
+    def steady_ltc(self):
+        self.init_ekman_spiral()
+        self.find_steady_k()
+        self.state.update_ctd()
+        self.update_interface()
