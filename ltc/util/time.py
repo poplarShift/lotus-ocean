@@ -1,20 +1,32 @@
-import numpy as np
+from numpy import datetime64
+from pandas import Timedelta, Timestamp
 from numbers import Number
 
 class Time:
     """
-    Represents either day numbers or a datetime. Can add a number of days.
+    Represents either day numbers or a datetime.
+    Can add a number of days.
     """
+
     _timestep_converters = {
         Number: lambda dt: dt,
-        np.datetime64: lambda dt: np.timedelta64(dt, 'D'),
+        Timestamp: lambda dt: Timedelta(days=dt),
+    }
+
+    _timestamp_converters = {
+        Number: lambda t: float(t),
+        str: lambda t: Timestamp(str),
+        datetime64: lambda t: Timestamp(t),
+        Timestamp: lambda t: t,
     }
 
     def __init__(self, value):
         if isinstance(value, Time):
             self = value
         else:
-            self.value = float(value) # enable comparison magic
+            for val_type, timestamp_converter in self._timestamp_converters.items():
+                if isinstance(value, val_type):
+                    self.value = timestamp_converter(value)
 
     def __add__(self, timestep):
         """

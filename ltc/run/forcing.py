@@ -76,11 +76,11 @@ class Timeseries(param.Parameterized):
             results[key] = callable_(time)
 
         for key, series in self.data.items():
-            if time in series.index:
+            if pd.Timestamp(time) in series.index:
                 results[key] = series.loc[time]
             else:
                 self.param.debug(f'Interpolating at time {time}')
-                results[key] = np.interp(time, series.index, series.values)
+                results[key] = np.interp(np.datetime64(time), series.index, series.values)
 
         return results
 
