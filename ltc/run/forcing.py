@@ -7,7 +7,7 @@ import param
 import gsw
 import numpy as np, pandas as pd
 
-from ..util.time import Time
+from ..util.time import Time, as_float
 
 def _interpolate_by_index(df, on_values):
     """
@@ -80,19 +80,26 @@ class Timeseries(param.Parameterized):
                 results[key] = series.loc[time]
             else:
                 self.param.debug(f'Interpolating at time {time}')
-                results[key] = np.interp(np.datetime64(time), series.index, series.values)
+                results[key] = np.interp(
+                    as_float(time),
+                    as_float(series.index.values),
+                    series.values,
+                )
 
         return results
 
+    @property
+    def time(self):
+        return self.data.index.values
+
     def __getattr__(self, attr):
-        if attr == 'time':
-            return self.data.index
-        elif attr in self.data:
+        if attr in self.data:
             return self.data[attr]
         elif attr in self.callables:
             return self.callables[attr]
         else:
             raise AttributeError
+
 
 class Forcing(Timeseries):
     """

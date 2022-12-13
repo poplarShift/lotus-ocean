@@ -1,5 +1,7 @@
+from datetime import datetime
 from numpy import datetime64
-from pandas import Timedelta, Timestamp
+from pandas import Timestamp
+import pandas as pd, numpy as np
 from numbers import Number
 
 class Time:
@@ -10,12 +12,13 @@ class Time:
 
     _timestep_converters = {
         Number: lambda dt: dt,
-        Timestamp: lambda dt: Timedelta(days=dt),
+        Timestamp: lambda dt: pd.Timedelta(days=dt),
     }
 
     _timestamp_converters = {
         Number: lambda t: float(t),
         str: lambda t: Timestamp(str),
+        datetime: lambda t: Timestamp(t),
         datetime64: lambda t: Timestamp(t),
         Timestamp: lambda t: t,
     }
@@ -27,6 +30,13 @@ class Time:
             for val_type, timestamp_converter in self._timestamp_converters.items():
                 if isinstance(value, val_type):
                     self.value = timestamp_converter(value)
+
+    @property
+    def value_as_float(self):
+        """
+        Return the value cast to either number of days or in microseconds.
+        """
+        return as_float(self.value)
 
     def __add__(self, timestep):
         """
@@ -40,3 +50,24 @@ class Time:
     def __le__(self, other): return self.value.__le__(other.value)
 
     def __repr__(self): return 'Time {val}'.format(val=repr(self.value))
+
+
+def as_float(x):
+    """
+    Coerces a given value to a float or an array of floats.
+    - Floats stay floats
+    - datetimes become microseconds since the numpy.datetime64 epoch.
+    """
+    if isinstance(x, (float, int)):
+        return x
+    elif isinstance(x, (datetime, datetime64, Timestamp)):
+        return np.datetime64(x).astype('datetime64[us]').astype(float)
+    elif isinstance(x, pd.DatetimeIndex):
+        return x.values.astype('datetime64[us]')
+    elif isinstance(x, np.ndarray):
+        if x.dtype.name.startswith('float') or x.dtype.name.startswith('int'):
+            return x
+        elif x.dtype.name.startswith('datetime64'):
+            return x.astype('datetime64[us]').astype(float)
+
+    raise ValueError('Not handled')
