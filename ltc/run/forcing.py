@@ -79,7 +79,7 @@ class Timeseries(param.Parameterized):
             if time in series.index:
                 results[key] = series.loc[time]
             else:
-                self.param.message(f'Interpolating at time {time}')
+                self.param.debug(f'Interpolating at time {time}')
                 results[key] = np.interp(time, series.index, series.values)
 
         return results
