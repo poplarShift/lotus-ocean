@@ -334,7 +334,7 @@ class WaterColumn(State):
             while in_overturn:
                 i = in_overturn.pop() # start at deepest point
 
-                if next_index_in_same_overturn(i, in_overturn):
+                if in_overturn and next_index_in_same_overturn(i, in_overturn):
                     j = in_overturn.pop()
                     # successively go up if next index still inside overturn
                     while in_overturn and next_index_in_same_overturn(j, in_overturn):
