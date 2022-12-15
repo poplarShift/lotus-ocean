@@ -424,15 +424,11 @@ class WaterColumn(State):
         if any(pycnocline):
             ix_pc = np.argmax(pycnocline) # True>False; first occurence
             top_of_pycnocline = (state.z > state.mld) & (state.z < state.mld+5)
+            wb_pc = np.mean(state.wb[top_of_pycnocline])
+            ustar_pc = state.ustar[ix_pc]
+            return ustar_pc, wb_pc, ix_pc
         else:
-            ix_pc = len(state.zz)-1
-            top_of_pycnocline = ix_pc
-
-        wb_pc = np.mean(state.wb[top_of_pycnocline])
-        ustar_pc = state.ustar[ix_pc]
-
-        return ustar_pc, wb_pc, ix_pc
-
+            raise RuntimeError('Cannot find the pycnocline')
 
     def init_leapfrog(self):
         """
