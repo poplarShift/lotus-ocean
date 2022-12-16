@@ -334,7 +334,7 @@ class MixingLengthModel(Model):
             lobuk = ustar**3 / (model.kappa * wb)
 
         fcor = abs(model.fcor)
-        if wb == 0:
+        if wb == 0 or ustar == 0:
             etastar2 = 1.
         else:
             etastar2 = 1. / (
