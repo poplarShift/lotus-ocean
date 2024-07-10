@@ -60,7 +60,7 @@ class Stepper(param.Parameterized):
         model   = stepper.model
         state   = model.state
 
-        stepper.param.debug('Time: {}\n'.format(state.time))
+        stepper.param.debug('======== Starting time step: {} ========'.format(state.time))
 
         if forcing is not None:
             # release readonly

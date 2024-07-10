@@ -10,6 +10,7 @@ import gsw
 import numpy as np
 
 from ..util.time import Time
+from ..util.param import LogValueSet
 from ..util.profile import significant_decimals
 
 import numbers
@@ -21,7 +22,8 @@ except ImportError:
 
 from .util import get_mixed_layer_depth_N2lim
 
-class State(param.Parameterized):
+
+class State(LogValueSet):
     """
     A specific state of the environment, localized in time and space.
 
@@ -60,23 +62,23 @@ class Interface(State):
     # Imposed by user
     # TBD put into forcing
 
-    ustar0 = param.Number(default=None, doc="""
+    ustar0 = param.Number(default=None, bounds=(0, np.inf), doc="""
 		Interface friction velocity (m s-1)""")
 
-    z0 = param.Number(default=None, doc="""
+    z0 = param.Number(default=None, bounds=(0, np.inf), doc="""
 		Ice-ocean roughness length (m)""")
 
-    Sice = param.Number(default=None, doc="""
+    Sice = param.Number(default=None, bounds=(0, np.inf), doc="""
 		Ice salinity (g kg-1)""")
 
     #
-    Uice = param.Number(default=None, doc="""
+    Uice = param.Number(default=None, bounds=(0, np.inf), doc="""
 		Ageostrophic ice velocity (m s-1).""")
 
     # Uice and ustar related through z0, Rossby similarity, ...
 
     # TBD References: Ch. 6.1
-    w_perc = param.Number(default=0, doc="""
+    w_perc = param.Number(default=0, bounds=(-np.inf, np.inf), doc="""
 		Percolation velocity of freshwater through the ice matrix (m s-1).
         TBD: downward/upward positive??
         """)
@@ -84,7 +86,7 @@ class Interface(State):
 
     # TBD: split up into shortwave + rest
     # rename into something like Fh_kinematic?
-    qcond = param.Number(default=0, doc="""
+    qcond = param.Number(default=0, bounds=(-np.inf, np.inf), doc="""
 		Kinematic conductive heat flux through ice (K m s-1). Upward positive.""")
 
     # TBD imposed by user etc distinction may not be useful...
@@ -92,36 +94,36 @@ class Interface(State):
 
     # ============
     # Imposed by user or calculated from this or previous time step)
-    wb0 = param.Number(default=None, doc="""
+    wb0 = param.Number(default=None, bounds=(-np.inf, np.inf), doc="""
 		Interface buoyancy flux (W kg-1)""")
     # use flag to distinguish between user set and calculated?
     # can set readonly=True in init??
 
-    hice = param.Number(default=None, doc="""
+    hice = param.Number(default=1, bounds=(0, np.inf), doc="""
 		Ice draft (m)""")
 
-    Tff = param.Number(default=None, doc="""
+    Tff = param.Number(default=None, bounds=(-np.inf, np.inf), doc="""
 		Far field temperature (degrees C)""")
 
-    Sff = param.Number(default=None, doc="""
+    Sff = param.Number(default=None, bounds=(0, np.inf), doc="""
 		Far field salinity (g kg-1)""")
 
     # Calculated
     #Define a wb0 that overrides the wb0 (wb0_oc) calculated in BoundaryLayer?
 
-    wT0 = param.Number(default=None, doc="""
+    wT0 = param.Number(default=None, bounds=(-np.inf, np.inf), doc="""
 		Interface kinematic heat flux (K m s-1)""")
 
-    wS0 = param.Number(default=None, doc="""
+    wS0 = param.Number(default=None, bounds=(-np.inf, np.inf), doc="""
 		Interface salinity flux (g kg-1 m s-1)""")
 
-    w_interface = param.Number(default=0, doc="""
+    w_interface = param.Number(default=0, bounds=(-np.inf, np.inf), doc="""
 		Interface velocity, i.e. melt or freeze rate (m s-1).""")
 
-    T0 = param.Number(default=None, doc="""
+    T0 = param.Number(default=None, bounds=(-np.inf, np.inf), doc="""
 		Interface temperature (deg C)""")
 
-    S0 = param.Number(default=None, doc="""
+    S0 = param.Number(default=None, bounds=(0, np.inf), doc="""
 		Interface salinity (g kg-1)""")
 
 
@@ -150,7 +152,7 @@ class WaterColumn(State):
     """
     A turbulent 1D water column.
     """
-    mld = param.Number(default=None, doc="""
+    mld = param.Number(default=None, bounds=(0, np.inf), doc="""
 		Mixed layer depth (m) below ice-ocean interface.
         Either user-supplied or computed from state using `mld_algorithm`.""")
 
@@ -158,16 +160,24 @@ class WaterColumn(State):
         allow_None=True, doc="""
         Callable that consumes a `state` instance and outputs mixed layer depth.""")
 
-    lam_max = param.Number(default=None)
+    # TBD
+    lam_max = param.Number(default=None, bounds=(0, np.inf), doc="""
+        """)
 
-    L_obukhov = param.Number(default=None, doc="""
+    lam_pc = param.Number(default=None, bounds=(0, np.inf), doc="""
+        Top-of-pycnocline mixing length (in meters). Reference: TBD""")
+
+    L_obukhov = param.Number(default=None, bounds=(-np.inf, np.inf), doc="""
 		Obukhov length (m), -ustar0**3/kappa/wb0""")
 
-    ustar_pc = param.Number(default=None, doc="""
+    ustar_pc = param.Number(default=None, bounds=(0, np.inf), doc="""
 		Top-of-pycnocline friction velocity (m s-1)""")
 
-    wb_pc = param.Number(default=None, doc="""
+    wb_pc = param.Number(default=None, bounds=(-np.inf, np.inf), doc="""
 		Top-of-pycnocline buoyancy flux (W kg-1)""")
+
+    ix_pc = param.Number(default=None, bounds=(0, np.inf), doc="""
+        Grid index of top of pycnocline on z (flux) grid.""")
 
     mix_overturns = param.Boolean(default=True, doc="""
         If True, automatically mixes overturns after density calculation.""")
@@ -319,8 +329,8 @@ class WaterColumn(State):
             if any(np.isnan(rho[in_overturn])):
                 raise ValueError('Found NaN density')
 
-            msg = 'Smoothing density overturns at time: {}...'
-            state.param.message(msg.format(state.time))
+            msg = 'Smoothing density overturns {} at time: {}...'
+            state.param.debug(msg.format(in_overturn, state.time))
 
             def next_index_in_same_overturn(i, in_overturn):
                 """
@@ -342,7 +352,7 @@ class WaterColumn(State):
                     ix = slice(j, i+1)
 
                     msg = '... at indices: {}'
-                    state.param.message(msg.format(ix))
+                    state.param.debug(msg.format(ix))
 
                     state.T[ix] = np.mean(state.T[ix])
                     state.S[ix] = np.mean(state.S[ix])
@@ -408,7 +418,7 @@ class WaterColumn(State):
         state.ustar = np.sqrt(state.Km * np.sqrt(s2))
 
 
-    def get_pycnocline_forcing(self):
+    def set_pycnocline_forcing(self):
         """
         Extract ustar, wb, and grid index at top of pycnocline.
 
@@ -424,11 +434,13 @@ class WaterColumn(State):
         if any(pycnocline):
             ix_pc = np.argmax(pycnocline) # True>False; first occurence
             top_of_pycnocline = (state.z > state.mld) & (state.z < state.mld+5)
-            wb_pc = np.mean(state.wb[top_of_pycnocline])
-            ustar_pc = state.ustar[ix_pc]
-            return ustar_pc, wb_pc, ix_pc
         else:
-            raise RuntimeError('Cannot find the pycnocline')
+            state.ix_pc = len(state.zz)-1
+            top_of_pycnocline = state.ix_pc
+            self.param.warning('No pycnocline found, returning lowest grid cell!')
+
+        state.wb_pc = np.mean(state.wb[top_of_pycnocline])
+        state.ustar_pc = state.ustar[state.ix_pc]
 
     def init_leapfrog(self):
         """
@@ -482,8 +494,8 @@ class IceOceanBoundaryLayer(Interface, WaterColumn):
     """
 
     # TBD should go into model. does not need to be dedicated parameter...
-    delU = param.Number(default=None, doc="""ustar/ velocity ratio at shallowest
-        grid point (from constant stress layer equations)""")
+    delU = param.Number(default=None, bounds=(0, np.inf), doc="""ustar/ velocity
+    ratio at shallowest grid point (from constant stress layer equations)""")
 
 
     def calculate_ancillary(self):

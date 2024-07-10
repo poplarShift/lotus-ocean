@@ -79,7 +79,7 @@ class Timeseries(param.Parameterized):
             if pd.Timestamp(time) in series.index:
                 results[key] = series.loc[time]
             else:
-                self.param.debug(f'Interpolating at time {time}')
+                self.param.debug(f'Interpolating {key} at time {time}')
                 results[key] = np.interp(
                     as_float(time),
                     as_float(series.index.values),

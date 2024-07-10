@@ -49,7 +49,7 @@ class Time:
     def __lt__(self, other): return self.value.__lt__(other.value)
     def __le__(self, other): return self.value.__le__(other.value)
 
-    def __repr__(self): return 'Time {val}'.format(val=repr(self.value))
+    def __repr__(self): return '{val}'.format(val=str(self.value))
 
 
 def as_float(x):
