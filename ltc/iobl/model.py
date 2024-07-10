@@ -34,15 +34,13 @@ class Model(param.Parameterized):
         Physical variables determining the state of the turbulent oceanic boundary
         layer.""")
 
-    _default_bounds = (-np.inf, np.inf)
-
     # Refs
-    cht = param.Number(default=None, bounds=_default_bounds, doc="""
+    cht = param.Number(default=0.0093, bounds=(0, np.inf), doc="""
         Interface heat transfer coefficient (-). For a stable or neutral boundary
         layer, this may be around 9.3e-3, for freezing ice around 5.7e-3.
         """)
 
-    chs = param.Number(default=None, bounds=_default_bounds, doc="""
+    chs = param.Number(default=0.0027, bounds=(0, np.inf), doc="""
         Interface salt transfer coefficient (-). For a stable or neutral boundary
         layer, this may be around 2.7e-4, for freezing ice around 5.7e-3.
         """)
@@ -51,54 +49,59 @@ class Model(param.Parameterized):
         Latitude (degrees N).
         """)
 
-    fcor = param.Number(default=None, bounds=_default_bounds, doc="""
+    fcor = param.Number(default=None, bounds=(-np.inf, np.inf), doc="""
         Coriolis frequency (s-1)""")
 
     # TBD
-    km_min = param.Number(default=1.8e-6, bounds=_default_bounds, doc="""Minimum
+    km_min = param.Number(default=1.8e-6, bounds=(0, np.inf), doc="""Minimum
     vertical eddy viscosity (m2 s-1). In practice, the molecular viscosity.""")
 
-    kh_min = param.Number(default=1.3e-7, bounds=_default_bounds, doc="""Minimum
+    kh_min = param.Number(default=1.3e-7, bounds=(0, np.inf), doc="""Minimum
     vertical eddy diffusivity of heat (m2 s-1). In practice, molecular heat diffusivity.""")
     #TBD double check!
 
     # TBD are these even used??
-    km_max = param.Number(default=2, bounds=_default_bounds, doc="""
+    km_max = param.Number(default=2, bounds=(0, np.inf), doc="""
         km_max""")
 
-    kh_max = param.Number(default=2, bounds=_default_bounds, doc="""
+    kh_max = param.Number(default=2, bounds=(0, np.inf), doc="""
         kh_max""")
 
     # Find ref in book
-    K_adjust = param.Number(default=0.005, bounds=_default_bounds, doc="""
+    K_adjust = param.Number(default=0.005, bounds=(0, np.inf), doc="""
         Eddy diffusivity for N2<0 below mixed layer""")
 
-    Ks_Kh_ratio = param.Number(default=1, bounds=_default_bounds, doc="""
+    Ks_Kh_ratio = param.Number(default=1, bounds=(-np.inf, np.inf), doc="""
         Ks/Kh ratio (-).""") # p. 142
 
-    kappa = param.Number(default=0.4, bounds=_default_bounds, doc="""
+    kappa = param.Number(default=0.4, bounds=(0, np.inf), doc="""
         von Kármán constant (-)""")
 
-    lam_star = param.Number(default=0.028, bounds=_default_bounds, doc="""
+    lam_star = param.Number(default=0.028, bounds=(0, np.inf), doc="""
         Lambda star, Λ* (-). References: p.77: 0.024""")
 
-    RC = param.Number(default=0.2, bounds=_default_bounds, doc="""
+    # TBD
+    lam_min = param.Number(default=0.01, bounds=(0, np.inf), doc="""
+        Minimum allowed mixing length (in meters). Reference: TBD""")
+
+    RC = param.Number(default=0.2, bounds=(0, np.inf), doc="""
         Critical flux Richardson number""")
 
-    cml = param.Number(default=0.2, bounds=_default_bounds, doc="""
-        Constant relating convective mixing length to mixed layer depth, around 0.2 to 0.4""") # pp. 142
+    cml = param.Number(default=0.2, bounds=(0, np.inf), doc="""Constant relating
+        convective mixing length to mixed layer depth, around 0.2 to 0.4. See
+        pp. 142""")
 
-    use_three_eqn = param.Boolean(default=True, doc="""
-        Whether to use the 3-eq. boundary conditions instead of the 2-eq. approach.
-        The 2-eq. approach is equivalent to a bulk Stanton number parameterization with St* = cht.""")
+    use_three_eqn = param.Boolean(default=True, doc="""Whether to use the 3-eq.
+        boundary conditions instead of the 2-eq. approach. The 2-eq. approach is
+        equivalent to a bulk Stanton number parameterization with St* = cht.""")
 
-    QL = param.Number(default=83.8, bounds=_default_bounds, doc="""
-        Latent heat of melting for fresh ice divided by specific heat of seawater (K)""")
+    QL = param.Number(default=83.8, bounds=(-np.inf, np.inf), doc="""Latent heat
+        of melting for fresh ice divided by specific heat of seawater (K)""")
 
     adjustments = param.List(
         default=None, allow_None=True, doc="""
-        List of callables that take in a `state` instance and output a dictionary of
-        parameters used to update the model.
+        List of callables that take in a `state` instance and output a dictionary
+        of parameters used to update the model.
         """)
 
     def __init__(self, *argv, **kwarg):
@@ -107,9 +110,8 @@ class Model(param.Parameterized):
             if self.state.latitude != self.latitude:
                 self.param.warning(f"""Latitudes
                 differ: {self.state.latitude} in state, {self.latitude} in model""")
-        self._update_fcor()
 
-    @param.depends('latitude', watch=True)
+    @param.depends('latitude', watch=True, on_init=True)
     def _update_fcor(self):
         """
         Another option is to set fcor dynamically at call time, e.g.:
@@ -301,17 +303,14 @@ class MixingLengthModel(Model):
             raise ValueError
 
         # -- Pycnocline
-        ustar_pc, wb_pc, ix_pc = state.get_pycnocline_forcing()
+        state.set_pycnocline_forcing()
 
-        lam_max_pc, _ = model._max_mixing_length_similarity(ustar_pc, wb_pc)
-        lam[ix_pc:] = lam_max_pc
+        state.lam_pc, _ = model._max_mixing_length_similarity(state.ustar_pc, state.wb_pc)
+        lam[state.ix_pc:] = state.lam_pc
 
-        # TBD make lam_min a parameter?
-        lam[lam<0.01] = 0.01
+        lam[lam<model.lam_min] = model.lam_min
 
-        state.lam      = lam
-        state.ustar_pc = ustar_pc
-        state.wb_pc    = wb_pc
+        state.lam = lam
 
     def _max_mixing_length_similarity(self, ustar, wb):
         """
