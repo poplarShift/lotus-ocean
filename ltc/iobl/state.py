@@ -432,7 +432,7 @@ class WaterColumn(State):
         pycnocline = state.z > state.mld
 
         if any(pycnocline):
-            ix_pc = np.argmax(pycnocline) # True>False; first occurence
+            state.ix_pc = np.argmax(pycnocline) # True>False; first occurence
             top_of_pycnocline = (state.z > state.mld) & (state.z < state.mld+5)
         else:
             state.ix_pc = len(state.zz)-1
