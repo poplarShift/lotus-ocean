@@ -1,13 +1,16 @@
 """
 Time series of environmental forcing parameters.
 """
+
 from collections.abc import Sequence
 from copy import deepcopy
 import param
 import gsw
 import numpy as np, pandas as pd
 
-from ..util.time import Time, as_float
+from ltc.util.time import Time, as_float
+from ltc.util.param import ParamForcer
+
 
 def _interpolate_by_index(df, on_values):
     """
@@ -15,11 +18,16 @@ def _interpolate_by_index(df, on_values):
     """
 
     return (
-        df
-        .merge(pd.DataFrame(None, pd.Index(on_values, name=df.index.name), dtype=float), left_index=True, right_index=True, how='outer', sort=True)
-        .interpolate(method='index') # interpolate on index values
-        .fillna(method='bfill') # pad uppermost values
-        .reindex(on_values) # only retain the new indices
+        df.merge(
+            pd.DataFrame(None, pd.Index(on_values, name=df.index.name), dtype=float),
+            left_index=True,
+            right_index=True,
+            how="outer",
+            sort=True,
+        )
+        .interpolate(method="index")  # interpolate on index values
+        .fillna(method="bfill")  # pad uppermost values
+        .reindex(on_values)  # only retain the new indices
     )
 
 
@@ -37,8 +45,7 @@ class Timeseries(param.Parameterized):
         self.update(**kwarg)
 
     def update(self, **kwarg):
-        """
-        """
+        """ """
         for key, value in kwarg.items():
             if callable(value):
                 if key in self.data:
@@ -52,8 +59,8 @@ class Timeseries(param.Parameterized):
     @classmethod
     def from_dataframe(cls, df):
         df = df.copy()
-        if 'time' in df:
-            time = df.pop('time')
+        if "time" in df:
+            time = df.pop("time")
         else:
             time = df.index
         new = cls(time=time)
@@ -63,7 +70,7 @@ class Timeseries(param.Parameterized):
     def update_from_dataframe(self, df):
         if not self.data.index.equals(df.index):
             df = _interpolate_on_column(df, self.data.index)
-            self.param.message('Interpolating new data to existing index')
+            self.param.message("Interpolating new data to existing index")
         self.update(**df)
 
     def __getitem__(self, time):
@@ -79,7 +86,7 @@ class Timeseries(param.Parameterized):
             if pd.Timestamp(time) in series.index:
                 results[key] = series.loc[time]
             else:
-                self.param.debug(f'Interpolating at time {time}')
+                self.param.debug(f"Interpolating {key} at time {time}")
                 results[key] = np.interp(
                     as_float(time),
                     as_float(series.index.values),
@@ -105,11 +112,13 @@ class Forcing(Timeseries):
     """
     Time series forcing for model runs.
     """
+
     def force(self, state):
         """
         Force values of selected state parameters.
         """
-        state.param.set_param(**self[state.time])
+        with ParamForcer(state):
+            state.param.set_param(**self[state.time])
 
-        for key, fn in self.callables.items():
-            setattr(state, key, fn(state))
+            for key, fn in self.callables.items():
+                setattr(state, key, fn(state))

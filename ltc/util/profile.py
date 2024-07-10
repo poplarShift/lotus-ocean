@@ -7,18 +7,23 @@ except ImportError:
     pd = None
 
 
-def interpolate_df_on_column(df, on_values, col='zz'):
+def interpolate_df_on_column(df, on_values, col="zz"):
     """
     Interpolate a dataframe `df` on values `on_values` of column `col`.
     """
 
     df = (
-        df
-        .set_index(col)
-        .merge(pd.DataFrame(None, pd.Index(on_values, name=col), dtype=float), left_index=True, right_index=True, how='outer', sort=True)
-        .interpolate(method='index') # interpolate on index values
-        .fillna(method='bfill') # pad uppermost values
-        .reindex(on_values) # only retain the new indices
+        df.set_index(col)
+        .merge(
+            pd.DataFrame(None, pd.Index(on_values, name=col), dtype=float),
+            left_index=True,
+            right_index=True,
+            how="outer",
+            sort=True,
+        )
+        .interpolate(method="index")  # interpolate on index values
+        .fillna(method="bfill")  # pad uppermost values
+        .reindex(on_values)  # only retain the new indices
         .reset_index()
     )
     return df
@@ -48,20 +53,20 @@ def convert_ctd(S, T, depth, hice, lon, lat, ts_units, depth_unit):
         p: Pressure
     """
 
-    if depth_unit == 'pres':
+    if depth_unit == "pres":
         p = depth
         z = -gsw.z_from_p(depth, lat)
-    elif depth_unit == 'depth':
+    elif depth_unit == "depth":
         p = gsw.p_from_z(-depth, lat)
         z = depth - hice
-    elif depth_unit == 'distance':
-        p = gsw.p_from_z(-hice-depth, lat)
+    elif depth_unit == "distance":
+        p = gsw.p_from_z(-hice - depth, lat)
         z = depth
 
-    if ts_units == 'SP/PT':
+    if ts_units == "SP/PT":
         SA = gsw.SA_from_SP(S, p, lon, lat)
         CT = gsw.CT_from_pt(SA, T)
-    elif ts_units == 'SA/CT':
+    elif ts_units == "SA/CT":
         SA = S
         CT = T
 
@@ -85,16 +90,16 @@ def make_staggered_grid(deltaz, depth, decimals=3):
     """
 
     z = np.arange(0, depth, deltaz)
-    if z[-1]+ (z[-1]-z[-2]) == depth:
+    if z[-1] + (z[-1] - z[-2]) == depth:
         z = np.r_[z, depth]
 
     dz = np.diff(z)
     zz = np.r_[
-        z[0] + 0.5*dz[0],
-        z[1:] + 0.5*dz,
+        z[0] + 0.5 * dz[0],
+        z[1:] + 0.5 * dz,
     ]
 
-    z  = np.around(z , decimals=decimals)
+    z = np.around(z, decimals=decimals)
     zz = np.around(zz, decimals=decimals)
 
     return z, zz
@@ -105,8 +110,8 @@ def significant_decimals(arr, tol=1e-10):
     Find significant decimals neglecting floating point roundoff errors
     """
     n = 0
-    while not all(abs(np.round(arr)-arr) < tol):
-        arr = arr*10
+    while not all(abs(np.round(arr) - arr) < tol):
+        arr = arr * 10
         n += 1
 
     return n

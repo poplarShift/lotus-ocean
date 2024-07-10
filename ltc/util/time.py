@@ -4,6 +4,7 @@ from pandas import Timestamp
 import pandas as pd, numpy as np
 from numbers import Number
 
+
 class Time:
     """
     Represents either day numbers or a datetime.
@@ -46,10 +47,14 @@ class Time:
             if isinstance(self.value, val_type):
                 return Time(self.value + timestep_converter(timestep))
 
-    def __lt__(self, other): return self.value.__lt__(other.value)
-    def __le__(self, other): return self.value.__le__(other.value)
+    def __lt__(self, other):
+        return self.value.__lt__(other.value)
 
-    def __repr__(self): return 'Time {val}'.format(val=repr(self.value))
+    def __le__(self, other):
+        return self.value.__le__(other.value)
+
+    def __repr__(self):
+        return "{val}".format(val=str(self.value))
 
 
 def as_float(x):
@@ -61,13 +66,13 @@ def as_float(x):
     if isinstance(x, (float, int)):
         return x
     elif isinstance(x, (datetime, datetime64, Timestamp)):
-        return np.datetime64(x).astype('datetime64[us]').astype(float)
+        return np.datetime64(x).astype("datetime64[us]").astype(float)
     elif isinstance(x, pd.DatetimeIndex):
-        return x.values.astype('datetime64[us]')
+        return x.values.astype("datetime64[us]")
     elif isinstance(x, np.ndarray):
-        if x.dtype.name.startswith('float') or x.dtype.name.startswith('int'):
+        if x.dtype.name.startswith("float") or x.dtype.name.startswith("int"):
             return x
-        elif x.dtype.name.startswith('datetime64'):
-            return x.astype('datetime64[us]').astype(float)
+        elif x.dtype.name.startswith("datetime64"):
+            return x.astype("datetime64[us]").astype(float)
 
-    raise ValueError('Not handled')
+    raise ValueError("Not handled")

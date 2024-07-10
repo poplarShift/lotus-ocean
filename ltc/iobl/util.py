@@ -22,11 +22,12 @@ def get_transfer_coefficients(state):
         References: TBD book pages where this is discussed!
     """
     if state.wb0 >= 0:
-        return dict(cht=0.0093, chs=0.0093/35)
+        return dict(cht=0.0093, chs=0.0093 / 35)
     elif state.wb0 < 0:
         return dict(cht=0.0057, chs=0.0057)
     else:
-        raise ValueError('Need to specify wb0')
+        raise ValueError("Need to specify wb0")
+
 
 def convective_vel_scale(ustar, wb, cml, dml):
     """
@@ -34,7 +35,7 @@ def convective_vel_scale(ustar, wb, cml, dml):
 
     TBD use lmax or cml*dml?
     """
-    return (ustar**3 - wb * cml * dml)**(1/3)
+    return (ustar**3 - wb * cml * dml) ** (1 / 3)
 
 
 def alpha_nr(Ri):
@@ -48,14 +49,12 @@ def alpha_nr(Ri):
     """
     # TBD. what to do with Ri < 0.0079??
 
-    with np.errstate(invalid='ignore'):
-        alpha = np.where(Ri>5,
-                         0.0039,
-                         np.where(Ri>0.079,
-                                  np.exp(-1.5 * np.sqrt(Ri-0.079)),
-                                  1.
-                                  )
-                         )
+    with np.errstate(invalid="ignore"):
+        alpha = np.where(
+            Ri > 5,
+            0.0039,
+            np.where(Ri > 0.079, np.exp(-1.5 * np.sqrt(Ri - 0.079)), 1.0),
+        )
 
     return alpha
 
@@ -80,14 +79,14 @@ def get_mixed_layer_depth_N2lim(state, mld_min=4, n2_lim=5e-5):
     """
     zz, z, n2 = state.zz, state.z, state.n2
 
-    with np.errstate(invalid='ignore'):
-        ix_pc = (z>=mld_min) & (n2>n2_lim)
+    with np.errstate(invalid="ignore"):
+        ix_pc = (z >= mld_min) & (n2 > n2_lim)
 
     if any(ix_pc):
         # iml is the index of the first occurrence of N2>n2_lim on the z grid
-        iml = np.argmax(ix_pc) # True>False; argmax gives first occurence
+        iml = np.argmax(ix_pc)  # True>False; argmax gives first occurence
         # zz grid is staggered: Get last zz value where N2<=n2_lim
-        mld = zz[iml-1]
+        mld = zz[iml - 1]
         return mld
     else:
         return None
@@ -113,14 +112,14 @@ def get_mixed_layer_depth_sigth_crit(state, sigth_crit=0.03):
     """
     zz, rho = state.zz, state.rho
 
-    with np.errstate(invalid='ignore'):
+    with np.errstate(invalid="ignore"):
         ix_pc = (rho - rho[0]) > sigth_crit
 
     if any(ix_pc):
         # iml is the index of the first occurrence of N2>n2_lim on the z grid
-        iml = np.argmax(ix_pc) # True>False; argmax gives first occurence
+        iml = np.argmax(ix_pc)  # True>False; argmax gives first occurence
         # zz grid is staggered: Get last zz value where N2<=n2_lim
-        mld = zz[iml-1]
+        mld = zz[iml - 1]
         return mld
     else:
         return None

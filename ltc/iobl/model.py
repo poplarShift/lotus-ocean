@@ -1,7 +1,7 @@
 """
+This module defines the state of a turbulent ice-ocean boundary layer. Parameters in here represent physical, observable state, subject to external forcing. Physical effects (density, mixed layer depth, shear) are only represented to the effect that they are uncontroversial and do not depend on turbulence parameters such as scaling constants or algorithms (those are defined in model.py).
 This module contains the core of the Local Turbulence Closure model of ice-ocean boundary layer turbulence as formulated in McPhee 2008. Parameters in here represent model parameters such as scaling constants that are not necessarily directly observable but have been constrained through through several field experiments.
 
-The canonical variable name for instances of LTCModel is `model`.
 """
 
 # TBD need to address changes in `hice`:
@@ -12,148 +12,296 @@ The canonical variable name for instances of LTCModel is `model`.
 # TBD weed through methods and make everything nonessential private!!
 
 from copy import deepcopy
+import warnings
 import param
 import gsw
 import numpy as np
 
-from .state import State
-from .util import get_transfer_coefficients, convective_vel_scale, alpha_nr
+from .util import (
+    get_transfer_coefficients,
+    convective_vel_scale,
+    alpha_nr,
+    get_mixed_layer_depth_N2lim,
+)
 from ..util.time import Time
+from ..util.param import ParamWatchdog
+from ..util.profile import significant_decimals
+
+import numbers
+
+try:
+    import xarray as xr
+except ImportError:
+    xr = None
+    warnings.warn("xarray not available.")
 
 
-class Model(param.Parameterized):
+class ModelState(ParamWatchdog):
     """
+    A specific state of the environment, localized in time and space, with adjustable parameters.
+
+    Base class for the state of the boundary layer.
+
     Parent class of all models in this module. If you are looking to modify
     experiment parameters, pass them as keyword arguments into the model instance.
 
     Holds global parameters on the model.
-    TBD move parameters to where they are needed!
     """
 
-    state = param.ClassSelector(State, allow_None=False, doc="""
-        Physical variables determining the state of the turbulent oceanic boundary
-        layer.""")
+    time = param.ClassSelector(
+        Time,
+        default=Time(np.nan),
+        allow_None=False,
+        doc="""
+        Time stamp. Either a float (counting days) or a numpy datetime.""",
+    )
 
-    _default_bounds = (-np.inf, np.inf)
+    latitude = param.Number(
+        allow_None=False,
+        bounds=(-90.0, 90.0),
+        doc="""
+    	Latitude (degrees N).
+    	""",
+    )
 
-    # Refs
-    cht = param.Number(default=None, bounds=_default_bounds, doc="""
-        Interface heat transfer coefficient (-). For a stable or neutral boundary
-        layer, this may be around 9.3e-3, for freezing ice around 5.7e-3.
-        """)
+    longitude = param.Number(
+        default=None,
+        bounds=(-180.0, 360.0),
+        doc="""
+    	Longitude (degrees E).
+    	""",
+    )
 
-    chs = param.Number(default=None, bounds=_default_bounds, doc="""
-        Interface salt transfer coefficient (-). For a stable or neutral boundary
-        layer, this may be around 2.7e-4, for freezing ice around 5.7e-3.
-        """)
-
-    latitude = param.Number(default=None, bounds=(-90., 90.), doc="""
-        Latitude (degrees N).
-        """)
-
-    fcor = param.Number(default=None, bounds=_default_bounds, doc="""
-        Coriolis frequency (s-1)""")
-
-    # TBD
-    km_min = param.Number(default=1.8e-6, bounds=_default_bounds, doc="""Minimum
-    vertical eddy viscosity (m2 s-1). In practice, the molecular viscosity.""")
-
-    kh_min = param.Number(default=1.3e-7, bounds=_default_bounds, doc="""Minimum
-    vertical eddy diffusivity of heat (m2 s-1). In practice, molecular heat diffusivity.""")
-    #TBD double check!
-
-    # TBD are these even used??
-    km_max = param.Number(default=2, bounds=_default_bounds, doc="""
-        km_max""")
-
-    kh_max = param.Number(default=2, bounds=_default_bounds, doc="""
-        kh_max""")
-
-    # Find ref in book
-    K_adjust = param.Number(default=0.005, bounds=_default_bounds, doc="""
-        Eddy diffusivity for N2<0 below mixed layer""")
-
-    Ks_Kh_ratio = param.Number(default=1, bounds=_default_bounds, doc="""
-        Ks/Kh ratio (-).""") # p. 142
-
-    kappa = param.Number(default=0.4, bounds=_default_bounds, doc="""
-        von Kármán constant (-)""")
-
-    lam_star = param.Number(default=0.028, bounds=_default_bounds, doc="""
-        Lambda star, Λ* (-). References: p.77: 0.024""")
-
-    RC = param.Number(default=0.2, bounds=_default_bounds, doc="""
-        Critical flux Richardson number""")
-
-    cml = param.Number(default=0.2, bounds=_default_bounds, doc="""
-        Constant relating convective mixing length to mixed layer depth, around 0.2 to 0.4""") # pp. 142
-
-    use_three_eqn = param.Boolean(default=True, doc="""
-        Whether to use the 3-eq. boundary conditions instead of the 2-eq. approach.
-        The 2-eq. approach is equivalent to a bulk Stanton number parameterization with St* = cht.""")
-
-    QL = param.Number(default=83.8, bounds=_default_bounds, doc="""
-        Latent heat of melting for fresh ice divided by specific heat of seawater (K)""")
+    grav = param.Number(
+        label="g",
+        bounds=(-np.inf, np.inf),
+        default=9.82,
+        doc="""
+		Gravitational acceleration g (m s-2)""",
+    )
 
     adjustments = param.List(
-        default=None, allow_None=True, doc="""
-        List of callables that take in a `state` instance and output a dictionary of
-        parameters used to update the model.
-        """)
+        default=None,
+        allow_None=True,
+        doc="""
+        List of callables that take in a `ModelState` instance and output a dictionary
+        of parameters used to update itself.
+        """,
+    )
 
     def __init__(self, *argv, **kwarg):
-        super().__init__(*argv, **kwarg)
-        if self.state is not None:
-            if self.state.latitude != self.latitude:
-                self.param.warning(f"""Latitudes
-                differ: {self.state.latitude} in state, {self.latitude} in model""")
-        self._update_fcor()
+        if "latitude" not in kwarg:
+            raise ValueError("Need to supply latitude")
+        if "time" in kwarg:
+            kwarg["time"] = Time(kwarg.get("time"))
+        # TODO automatically add dynamic parameters like this - but wait until I've thought through API
+        # params_dynamic = kwarg.get("params_dynamic", [])
+        # params_dynamic.extend(["time"])
+        # kwarg["params_dynamic"] = params_dynamic
 
-    @param.depends('latitude', watch=True)
-    def _update_fcor(self):
-        """
-        Another option is to set fcor dynamically at call time, e.g.:
-        self.fcor = lambda: gsw.f(self.latitude)  # in __init___
-        """
-        self.fcor = gsw.f(self.latitude)
+        super().__init__(*argv, **kwarg)
+        self.grav = lambda: gsw.grav(self.latitude, 0)
 
     def adjust_model_parameters(self, **kwarg):
         """
         Tune the model according to the state.
         """
-        model = self
-        state = model.state
-
-        if model.adjustments is not None:
-            for hook in model.adjustments:
-                new_params = hook(state)
+        if self.adjustments is not None:
+            for hook in self.adjustments:
+                new_params = hook(self)
                 for key, val in new_params.items():
-                    setattr(model, key, val)
+                    setattr(self, key, val)
 
-            state.update_ctd()
-            model.update_interface()
+            self.update_ctd()
+            self.update_interface()
 
 
-class IceOceanInterfaceModel(Model):
+class IceOceanInterfaceParams(ParamWatchdog):
     """
-    Calculate ice-ocean fluxes.
+    The ice-ocean interface.
     """
+
+    # TODO Refs
+    cht = param.Number(
+        default=0.0093,
+        bounds=(0, np.inf),
+        doc="""
+        Interface heat transfer coefficient (-). For a stable or neutral boundary
+        layer, this may be around 9.3e-3, for freezing ice around 5.7e-3.
+        """,
+    )
+
+    chs = param.Number(
+        default=0.0027,
+        bounds=(0, np.inf),
+        doc="""
+        Interface salt transfer coefficient (-). For a stable or neutral boundary
+        layer, this may be around 2.7e-4, for freezing ice around 5.7e-3.
+        """,
+    )
+
+    ustar0 = param.Number(
+        default=None,
+        doc="""
+		Interface friction velocity (m s-1)""",
+    )
+
+    z0 = param.Number(
+        default=None,
+        bounds=(0, np.inf),
+        doc="""
+		Ice-ocean roughness length (m)""",
+    )
+
+    Sice = param.Number(
+        default=None,
+        bounds=(0, np.inf),
+        doc="""
+		Ice salinity (g kg-1)""",
+    )
+
+    Uice = param.Number(
+        default=None,
+        bounds=(0, np.inf),
+        doc="""
+		Ageostrophic ice velocity (m s-1).""",
+    )
+
+    # Uice and ustar related through z0, Rossby similarity, ...
+
+    # TBD References: Ch. 6.1
+    w_perc = param.Number(
+        default=0,
+        bounds=(-np.inf, np.inf),
+        doc="""
+		Percolation velocity of freshwater through the ice matrix (m s-1).
+        TBD: downward/upward positive??
+        """,
+    )
+
+    # TBD: split up into shortwave + rest
+    # rename into something like Fh_kinematic?
+    qcond = param.Number(
+        default=0,
+        bounds=(-np.inf, np.inf),
+        doc="""
+		Kinematic conductive heat flux through ice (K m s-1). Upward positive.""",
+    )
+
+    # TODO sort alphabetically??
+
+    wb0 = param.Number(
+        default=None,
+        bounds=(-np.inf, np.inf),
+        doc="""
+		Interface buoyancy flux (W kg-1)""",
+    )
+    # TODO use param watchers to check for user set parameters and calculated
+
+    hice = param.Number(
+        default=1,
+        bounds=(0, np.inf),
+        doc="""
+		Ice draft (m)""",
+    )
+
+    Tff = param.Number(
+        default=None,
+        bounds=(-273.15, np.inf),
+        doc="""
+		Far field conservative temperature (degrees C)""",
+    )
+
+    Sff = param.Number(
+        default=None,
+        bounds=(0, np.inf),
+        doc="""
+		Far field salinity (g kg-1)""",
+    )
+
+    wT0 = param.Number(
+        default=None,
+        bounds=(-np.inf, np.inf),
+        doc="""
+		Interface kinematic heat flux (K m s-1)""",
+    )
+
+    wS0 = param.Number(
+        default=None,
+        bounds=(-np.inf, np.inf),
+        doc="""
+		Interface salinity flux (g kg-1 m s-1)""",
+    )
+
+    w_interface = param.Number(
+        default=0,
+        bounds=(-np.inf, np.inf),
+        doc="""
+		Interface velocity, i.e. melt or freeze rate (m s-1).""",
+    )
+
+    T0 = param.Number(
+        default=None,
+        bounds=(-np.inf, np.inf),
+        doc="""
+		Interface temperature (deg C)""",
+    )
+
+    S0 = param.Number(
+        default=None,
+        bounds=(0, np.inf),
+        doc="""
+		Interface salinity (g kg-1)""",
+    )
+
+    use_three_eqn = param.Boolean(
+        default=True,
+        doc="""Whether to use the 3-eq.
+        boundary conditions instead of the 2-eq. approach. The 2-eq. approach is
+        equivalent to a bulk Stanton number parameterization with St* = cht.""",
+    )
+
+    QL = param.Number(
+        default=83.8,
+        bounds=(0, np.inf),
+        doc="""Latent heat
+        of melting for fresh ice divided by specific heat of seawater (K)""",
+    )
+
+    def __init__(self, *argv, **kwarg):
+        super().__init__(*argv, **kwarg)
+        if len(set(self.params_forced).intersection({"ustar0", "Uice"})) != 1:
+            raise ValueError("Exactly one of ustar0 or Uice must be forced.")
+
+    def _set_fresh_ice_QL(self):
+        """
+        Proper application of this formula would require calculating it after
+        setting interface salinity and temperature (S0, T0),
+        which itself depends on QL... As this formula is only a crude approximation
+        involving a number of rather uncertain parameters, we do not care about such
+        detail. This function is therefore never invoked in the current
+        implementation. The code below is left here for the benefit of the reader.
+
+        Reference: p. 111
+        """
+        raise NotImplementedError("Use get_haline_QL")
+        L_ice = 333.55e3  # J/kg
+        # Approximate interface water pressure (dbar) with ice draft (m)
+        cp = gsw.cp_t_exact(
+            self.S0, gsw.t_from_CT(self.S0, self.T0, self.hice), self.hice
+        )  # J/kg/K
+        self.QL = L_ice / cp
 
     def update_interface(self, **kwarg):
-        """"
+        """ "
         Calculate wT0, wS0, wb0, w_interface
 
         See Figure 6.2,  7.2
         """
-        model = self
-        state = model.state
 
-        model._update_farfield_TS()
-        model._update_interface_shear()
-
-        cht, chs = model.cht, model.chs
-        ustar0 = abs(state.ustar0)
-        wb0 = state.wb0
+        cht, chs = self.cht, self.chs
+        ustar0 = abs(self.ustar0)
+        wb0 = self.wb0
 
         # # TBD find better solution to do this check...
         # if wb0 is None or np.isnan(wb0):
@@ -163,104 +311,527 @@ class IceOceanInterfaceModel(Model):
         # also check if we need iterative solution re-calculate wb0_oc
         # with re-calculated wb0...
 
-        if wb0 >= 0: # Neutral/stable
+        if wb0 >= 0:  # Neutral/stable
             uturb = ustar0
-        elif wb0 < 0: # Convecting
+        elif wb0 < 0:  # Convecting
             # TBD cannot be called on Interface itself (need for mld)
-            uturb = convective_vel_scale(ustar0, wb0, model.cml, state.mld)
+            assert hasattr(
+                self, "mld"
+            ), "`mld` not available"  # supplied later by WaterColumn
+            uturb = convective_vel_scale(ustar0, wb0, self.cml, self.mld)
         else:
-            raise ValueError('Need wb0 to be set')
+            raise ValueError("Need wb0 to be set")
 
-        # uturb=wstar
+        self.wb0, self.w_interface, self.wT0, self.wS0, self.T0, self.S0 = (
+            interface_fluxes(
+                uturb=uturb,
+                Tff=self.Tff,
+                Sff=self.Sff,
+                hice=self.hice,
+                Sice=self.Sice,
+                w_perc=self.w_perc,
+                qcond=self.qcond,
+                use_three_eqn=self.use_three_eqn,
+                cht=self.cht,
+                chs=self.chs,
+                grav=self.grav,
+                QL=self.QL,
+            )
+        )
 
-        if uturb == 0:
-            # set T0, S0 to far field, all fluxes to zero
-            state.T0 = state.Tff
-            state.S0 = state.Sff
-            state.wT0 = 0
-            state.wS0 = 0
-            state.wb0 = 0
+
+class WaterColumn(ParamWatchdog):
+    """
+    A turbulent 1D water column. It is defined on a staggered grid. Most easily
+    instantiated using .from_ctd class method.
+    """
+
+    # TBD
+    km_min = param.Number(
+        default=1.8e-6,
+        bounds=(0, np.inf),
+        doc="""Minimum
+    vertical eddy viscosity (m2 s-1). In practice, the molecular viscosity.""",
+    )
+
+    kh_min = param.Number(
+        default=1.3e-7,
+        bounds=(0, np.inf),
+        doc="""Minimum
+    vertical eddy diffusivity of heat (m2 s-1). In practice, molecular heat diffusivity.""",
+    )
+    # TBD double check!
+
+    # TBD are these even used??
+    km_max = param.Number(
+        default=2,
+        bounds=(0, np.inf),
+        doc="""
+        km_max""",
+    )
+
+    kh_max = param.Number(
+        default=2,
+        bounds=(0, np.inf),
+        doc="""
+        kh_max""",
+    )
+
+    # Find ref in book
+    K_adjust = param.Number(
+        default=0.005,
+        bounds=(0, np.inf),
+        doc="""
+        Eddy diffusivity for N2<0 below mixed layer""",
+    )
+
+    Ks_Kh_ratio = param.Number(
+        default=1,
+        bounds=(-np.inf, np.inf),
+        doc="""
+        Ks/Kh ratio (-).""",
+    )  # p. 142
+
+    kappa = param.Number(
+        default=0.4,
+        bounds=(0, np.inf),
+        doc="""
+        von Kármán constant (-)""",
+    )
+
+    lam_star = param.Number(
+        default=0.028,
+        bounds=(0, np.inf),
+        doc="""
+        Lambda star, Λ* (-). References: p.77: 0.024""",
+    )
+
+    # TBD
+    lam_min = param.Number(
+        default=0.01,
+        bounds=(0, np.inf),
+        doc="""
+        Minimum allowed mixing length (in meters). Reference: TBD""",
+    )
+
+    RC = param.Number(
+        default=0.2,
+        bounds=(0, np.inf),
+        doc="""
+        Critical flux Richardson number""",
+    )
+
+    cml = param.Number(
+        default=0.2,
+        bounds=(0, np.inf),
+        doc="""Constant relating
+        convective mixing length to mixed layer depth, around 0.2 to 0.4. See
+        pp. 142""",
+    )
+
+    fcor = param.Number(
+        default=None,
+        bounds=(-np.inf, np.inf),
+        doc="""
+        Coriolis frequency (s-1)""",
+    )
+
+    mld = param.Number(
+        default=None,
+        bounds=(0, np.inf),
+        doc="""
+		Mixed layer depth (m) below ice-ocean interface.
+        Either user-supplied or computed from state using `mld_algorithm`.""",
+    )
+
+    mld_algorithm = param.Callable(
+        default=get_mixed_layer_depth_N2lim,
+        allow_None=True,
+        doc="""
+        Callable that consumes a `state` instance and outputs mixed layer depth.""",
+    )
+
+    # TBD
+    lam_max = param.Number(
+        default=None,
+        bounds=(0, np.inf),
+        doc="""
+        """,
+    )
+
+    lam_pc = param.Number(
+        default=None,
+        bounds=(0, np.inf),
+        doc="""
+        Top-of-pycnocline mixing length (in meters). Reference: TBD""",
+    )
+
+    L_obukhov = param.Number(
+        default=None,
+        bounds=(-np.inf, np.inf),
+        doc="""
+		Obukhov length (m), -ustar0**3/kappa/wb0""",
+    )
+
+    ustar_pc = param.Number(
+        default=None,
+        bounds=(0, np.inf),
+        doc="""
+		Top-of-pycnocline friction velocity (m s-1)""",
+    )
+
+    wb_pc = param.Number(
+        default=None,
+        bounds=(-np.inf, np.inf),
+        doc="""
+		Top-of-pycnocline buoyancy flux (W kg-1)""",
+    )
+
+    ix_pc = param.Number(
+        default=None,
+        bounds=(0, np.inf),
+        doc="""
+        Grid index of top of pycnocline on z (flux) grid.""",
+    )
+
+    mix_overturns = param.Boolean(
+        default=True,
+        doc="""
+        If True, automatically mixes overturns after density calculation.""",
+    )
+
+    # Gridded
+    # zz: Staggered grid for mean values
+    _zz_grid = ["U", "u", "v", "T", "S", "rho"]
+
+    zz = param.Array(
+        default=None, doc="""Distance from interface on mean value grid (m)."""
+    )
+
+    dzz = param.Array(default=None, doc="""Cell width for mean value grid (m).""")
+
+    # all 1-D arrays
+    U = param.Array(
+        default=None,
+        doc="""
+        Water velocity (complex numbers; real part to the East, imaginary to the North)
+        (m s-1).""",
+    )
+    T = param.Array(
+        default=None, doc="""Water conservative temperature (TEOS-10) (deg C)"""
+    )
+    S = param.Array(default=None, doc="""Water absolute salinity (TEOS-10) (g kg-1)""")
+    rho = param.Array(default=None, doc="""Water potential density (kg m-3)""")
+
+    # TBD make custom class that automatically cycles through all tracers
+    # contaned in it?
+    tracer = param.Array(
+        default=None,
+        doc="""
+        Arbitrary tracer field. Must be of shape (nz, N) for grid length nz and
+        N tracers.""",
+    )
+
+    # For leap frog scheme
+    T_previous = param.Array(default=None, doc="")
+    S_previous = param.Array(default=None, doc="")
+    U_previous = param.Array(default=None, doc="")
+    tracer_previous = param.Array(
+        default=None,
+        doc="""
+
+        """,
+    )
+
+    # z: Grid for gradients, fluxes, turbulent parameters, ...
+    _z_grid = [
+        "Kh",
+        "Ks",
+        "Km",
+        "gradS",
+        "gradT",
+        "n2",
+        "gradu",
+        "gradv",
+        "Ri",
+        "ustar",
+        "wb",
+        "lam",
+        "Fh",
+    ]
+
+    z = param.Array(
+        default=None, doc="""Distance from interface on gradient value grid (m)."""
+    )
+
+    dz = param.Array(default=None, doc="""Cell width for mean value grid (m).""")
+
+    Kh = param.Array(default=None, doc="")
+    Ks = param.Array(default=None, doc="")
+    Km = param.Array(default=None, doc="")
+    n2 = param.Array(default=None, doc="")
+    ustar = param.Array(default=None, doc="Turbulent velocity scale (m s-1)")
+    lam = param.Array(default=None, doc="Mixing length, lambda (m)")
+
+    # weed out - don't need to drag along all these parameters.
+    # can calculate a bunch of them in .finalize() or otherwise
+    gradS = param.Array(default=None, doc="")
+    gradT = param.Array(default=None, doc="")
+    gradu = param.Array(default=None, doc="")
+    gradv = param.Array(default=None, doc="")
+    Ri = param.Array(default=None, doc="Richardson number (-)")
+    wb = param.Array(default=None, doc="Buoyancy flux (W kg-1)")
+
+    Fh = param.Array(default=None, doc="Heat flux (W m-2)")
+
+    def __init__(self, *argv, **kwarg):
+        super().__init__(*argv, **kwarg)
+        self.fcor = lambda: gsw.f(self.latitude)  # auto-update fcor
+        if self.z[0] != 0:
+            raise ValueError("Upper domain boundary must be at interface (0 m)")
+
+    @classmethod
+    def from_ctd(cls, SA, CT, zz, *argv, **kwarg):
+        """
+        Create an instance from vertical profile of absolute salinity
+        and conservative temperature.
+
+        zz must be given as distance from interface (m).
+        TBD enable automatic interpolation using util funcs
+        """
+        zz = np.array(zz)
+        SA = np.array(SA)
+        CT = np.array(CT)
+
+        zgrid = cls._make_zgrid(zz)
+
+        if zgrid["z"][0] != 0:
+            raise NotImplementedError("Interpolate TS accordingly")
+
+        # TBD clean this up once done
+        # Keep three columns for the leap-frog time dependent scheme
+        # SA_arr = np.c_[SA, SA]
+        # CT_arr = np.c_[CT, CT]
+
+        new = cls(
+            S=SA,
+            T=CT,
+            *argv,
+            **zgrid,
+            **kwarg,
+        )
+
+        new.update_ctd()
+
+        return new
+
+    @staticmethod
+    def _make_zgrid(zz):
+        """
+        Create the flux grid z from the staggered mean value grid zz.
+
+        Note
+        ----
+        TBD if z[0] does not end up at ice-ocean interface, interpolate accordingly
+        """
+        dzz = np.diff(zz)
+        z = np.r_[
+            zz[0] - 0.5 * (zz[1] - zz[0]),
+            zz[1:] - 0.5 * dzz,
+        ]
+        sig = significant_decimals(z)
+        z = np.around(z, decimals=sig)
+
+        dz = np.diff(z)
+        # state.h = np.max(z) # TBD basically unused
+        return dict(z=z, dz=dz, zz=zz, dzz=dzz)
+
+    # TBD split into calc_density and mix_overturns
+    def update_ctd(self, itcount=None):
+        """
+        Update density, stratification, mixed layer depth
+        """
+        # Keep track of recursion depth
+        if itcount is None:
+            itcount = 0
+        elif itcount > 5:
+            raise RecursionError
+
+        rho = 1000 + gsw.sigma0(self.S, self.T)
+        gradrho = np.r_[np.nan, np.diff(rho) / self.dzz]
+
+        # Check for unstable density stratification
+        sort_index = np.argsort(rho)
+        in_overturn = list(np.flatnonzero(sort_index != range(len(sort_index))))
+
+        # argsort may return re-ordering even if values are actually equal.
+        # Hence also check if there actually are any unstable gradients in the
+        # purported overturns
+
+        if in_overturn and np.any(gradrho[in_overturn] < 0) and self.mix_overturns:
+            if any(np.isnan(rho[in_overturn])):
+                raise ValueError("Found NaN density")
+
+            msg = "Smoothing density overturns {} at time: {}..."
+            self.param.debug(msg.format(in_overturn, self.time))
+
+            def next_index_in_same_overturn(i, in_overturn):
+                """
+                Check if next index is still in same overturn
+                This can mean at least one of two things:
+                  1) The next index is immediately above on the grid
+                  2) Density is still increasing
+                """
+                return i == in_overturn[-1] + 1 or rho[i] < rho[in_overturn[-1]]
+
+            while in_overturn:
+                i = in_overturn.pop()  # start at deepest point
+
+                if in_overturn and next_index_in_same_overturn(i, in_overturn):
+                    j = in_overturn.pop()
+                    # successively go up if next index still inside overturn
+                    while in_overturn and next_index_in_same_overturn(j, in_overturn):
+                        j = in_overturn.pop()
+                    ix = slice(j, i + 1)
+
+                    msg = "... at indices: {}"
+                    self.param.debug(msg.format(ix))
+
+                    self.T[ix] = np.mean(self.T[ix])
+                    self.S[ix] = np.mean(self.S[ix])
+
+                    # TBD debug this. will probably have to insert newaxis?
+                    if self.tracer is not None:
+                        self.tracer[ix, ...] = np.mean(self.tracer, axis=0)[np.newaxis]
+
+            self.update_ctd(itcount=itcount + 1)
+
         else:
-            # TBD use bulk stanton number? provide util that
-            # gives wT0, wS0, wb0 from St* parameterization?
-            QL = model.get_haline_QL()
-            if model.use_three_eqn:
-                # Eqns 6.8, 6.9
-                # Neglect difference between interface pressure and ice draft
-                m = -gsw.t_freezing(state.Sff, state.hice, 1)/state.Sff
-                T_L = QL*chs/cht
-                gamma_2 = state.w_perc/cht/uturb
-                AA = m*(1+gamma_2)
-                T_H = state.Tff-state.qcond/cht/uturb-m*gamma_2*state.Sice
+            # insert NaN at uppermost flux level z[0] == 0 m
+            self.gradT = np.r_[np.nan, np.diff(self.T) / self.dzz]
+            self.gradS = np.r_[np.nan, np.diff(self.S) / self.dzz]
 
-                BB = T_H+T_L+gamma_2*QL-AA*state.Sice
-                CC = -(state.Sice*T_H+T_L*state.Sff+gamma_2*QL*state.Sice)
-                # solve AA*S0^2+BB*S0+CC=0
-                state.S0 = (-BB+np.sqrt(BB**2-4*AA*CC))/2/AA
-                state.T0 = -m*state.S0
-                state.wT0 = cht*uturb*(state.Tff-state.T0)
-                state.wS0 = chs*uturb*(state.Sff-state.S0)
-                state.w_interface = state.wS0/(state.S0-state.Sice)-state.w_perc
+            rhom = np.interp(self.z, self.zz, rho)
+            self.n2 = self.grav * gradrho / rhom
 
-            else:
-                state.S0 = state.Sff
-                # Neglect difference between interface pressure and ice draft
-                state.T0 = gsw.t_freezing(state.S0, state.hice, 1)
-                state.wT0 = cht*uturb*(state.Tff-state.T0)
-                state.w_interface = (state.wT0-state.qcond)/QL
-                state.wS0 = (state.w_interface+state.w_perc) * (state.S0-state.Sice)
+            self.rho = rho
+            self.set_mixed_layer_depth()
 
-            # TBD need to distinguish this one from the one given at instantiation
-            # if given!
-            # Could do this by keeping two wb0:
-            # forcing.wb0 (has precedence for mixing length calc),
-            # state.wb0 (calculated)
-
-            # Neglect difference between pressure and depth of ice draft
-            alpha = gsw.alpha(state.S0, state.T0, state.hice)
-            beta = gsw.beta(state.S0, state.T0, state.hice)
-            state.wb0 = state.grav*(beta * state.wS0 - alpha * state.wT0)
-
-    def get_haline_QL(self, **kwarg):
+    def set_mixed_layer_depth(self):
         """
-        TBD refactor this to model? In that case take Sice from forcing, not
-        self or model
-
-        Maykut (1985, his equations 6.13 and 19)
+        Returns depth of mixed layer below ice (not below ocean surface).
         """
-        model = self
-        state = model.state
+        if self.mld_algorithm is not None:
+            mld = self.mld_algorithm(self)
+            if mld is None:
+                # Entire domain is unstratified, return domain boundary (see Fig 7.1)
+                mld = self.zz[-1]
+                msg = "Entire domain unstratified at time step: {}."
+                self.param.log(param.INFO, msg.format(self.time))
+            self.mld = mld
 
-        return model.QL * (1 - 0.03*state.Sice)
+        elif self.mld is not None:
+            self.param.message("Keeping user-supplied mixed layer depth.")
+        else:
+            self.param.warning("No mixed layer depth available.")
 
-    def _update_farfield_TS(self):
+    def update_shear_driven_turbulence(self):
         """
-        Update interface far-field T, S with uppermost grid cell of current state.
+        Update gradu, gradv, alpha, ustar
         """
-        model = self
-        state = model.state
-        state.Sff = state.S[0]
-        state.Tff = state.T[0]
+        # TBD might want to make calculation of significant Ri more rigorous
+        FUZZ = 1e-12
+        # Insert nan at uppermost flux level z[0] (ice-ocean interface)
+        # to be consistent with grid.
+        gradU = np.r_[np.nan + 1j * np.nan, np.diff(self.U) / self.dzz]
+
+        # Gradient Richardson number Ri
+        s2 = np.real(gradU) ** 2 + np.imag(gradU) ** 2
+        with np.errstate(invalid="ignore"):
+            # state.Ri = np.where(s2>=FUZZ, state.n2/s2, 5), 5)
+            Ri = np.where(s2 >= FUZZ, self.n2 / s2, 5)
+            self.Ri = np.where(Ri < 5, Ri, 5)
+
+        self.ustar = np.sqrt(self.Km * np.sqrt(s2))
+
+    def set_pycnocline_forcing(self):
+        """
+        Extract ustar, wb, and grid index at top of pycnocline.
+
+        Pycnocline mixing length depends on ustar and wb at top of pycnocline
+        last index that is still in the mixed layer
+
+        TBD: decide consistent top of pc criterion for both wb and ustar
+        """
+        pycnocline = self.z > self.mld
+
+        if any(pycnocline):
+            self.ix_pc = np.argmax(pycnocline)  # True>False; first occurence
+            top_of_pycnocline = (self.z > self.mld) & (self.z < self.mld + 5)
+        else:
+            self.ix_pc = len(self.zz) - 1
+            top_of_pycnocline = self.ix_pc
+            self.param.log(param.INFO, "No pycnocline found, returning lowest grid cell!")
+
+        self.wb_pc = np.mean(self.wb[top_of_pycnocline])
+        self.ustar_pc = self.ustar[self.ix_pc]
+
+    def init_leapfrog(self):
+        """
+        Initialize the backward time step for the leap frog integrator
+        """
+        self.T_previous = deepcopy(self.T)
+        self.S_previous = deepcopy(self.S)
+        self.U_previous = deepcopy(self.U)
+        self.tracer_previous = deepcopy(self.tracer)
+
+    def output_state(self):
+        """
+        Return a deep deepcopy of the current state.
+
+        If xarray is available, convert to an xarray Dataset.
+        """
+
+        self.calculate_ancillary()
+
+        if xr is None:
+            return deepcopy(self)
+        else:
+            dct = dict(self.param.get_param_values())
+
+            data = {}
+
+            for k, v in dct.items():
+                if v is None:
+                    data[k] = (["time"], [None])
+                else:
+                    if isinstance(v, (numbers.Number, bool)):
+                        data[k] = (["time"], [v])
+                    elif k in self._z_grid:
+                        data[k] = (["z", "time"], v[:, np.newaxis])
+                    elif k in self._zz_grid:
+                        data[k] = (["zz", "time"], v[:, np.newaxis])
+
+            data["z"] = (["z"], self.z)
+            data["zz"] = (["zz"], self.zz)
+            data["time"] = (["time"], [self.time.value])
+
+            return deepcopy(xr.Dataset(data))
 
     def _update_interface_shear(self, **kwarg):
         """
         TBD calculate with aux?
 
-        TBD Mutually determine ustar0/Uice as given by user/forcing
-
         Shear at interface is governed by Law of the Wall.
         """
-        model = self
-        state = model.state
 
-        logratio = np.log(abs(state.zz[0]) / state.z0) / model.kappa
-        state.delU = state.ustar0 * logratio
-
-
-class MixingLengthModel(Model):
-    """
-    Calculate a vertical profile of mixing lengths.
-    """
+        logratio = np.log(abs(self.zz[0]) / self.z0) / self.kappa
+        if "ustar0" in self.params_forced:
+            self.delU = self.ustar0 * logratio
+            self.Uice = self.U[0] + self.delU
+        elif "Uice" in self.params_forced:
+            self.delU = self.Uice - self.U[0]
+            self.ustar0 = self.delU / logratio
 
     def update_mixing_length(self, **kwarg):
         """
@@ -269,49 +840,46 @@ class MixingLengthModel(Model):
 
         See Figure 7.2.
         """
-        model = self
-        state = model.state
 
         # Use eddy haline diffusivity for buoyancy flux
-        state.wb = state.Ks * state.n2
+        self.wb = self.Ks * self.n2
 
         # First pass: Estimate maximum mixing length
         # using the formula for the stable case
-        lam_max_similarity, state.L_obukhov = model._max_mixing_length_similarity(abs(state.ustar0), state.wb0)
+        lam_max_similarity, self.L_obukhov = self._max_mixing_length_similarity(
+            abs(self.ustar0), self.wb0
+        )
 
-        if state.wb0 >= 0:
+        if self.wb0 >= 0:
             # Neutral or melting
-            state.lam_max = lam_max_similarity
-            lam = model._mixing_length_stable()
-        elif state.wb0 < 0:
+            self.lam_max = lam_max_similarity
+            lam = self._mixing_length_stable()
+        elif self.wb0 < 0:
             """
             Adjust the mixing length to the unstable scenario.
 
             Upper left corner of Fig. 7.2
             """
-            lam_max_unstable = model.kappa * state.mld
+            lam_max_unstable = self.kappa * self.mld
             if lam_max_similarity < 0 or lam_max_similarity > lam_max_unstable:
-                state.lam_max = lam_max_unstable
+                self.lam_max = lam_max_unstable
             else:
                 # TBD double check this, why whould you not set lam_max to kappa*mld throughout??
-                state.lam_max = lam_max_similarity
+                self.lam_max = lam_max_similarity
 
-            lam = model._mixing_length_unstable()
+            lam = self._mixing_length_unstable()
         else:
             raise ValueError
 
         # -- Pycnocline
-        ustar_pc, wb_pc, ix_pc = state.get_pycnocline_forcing()
+        self.set_pycnocline_forcing()
 
-        lam_max_pc, _ = model._max_mixing_length_similarity(ustar_pc, wb_pc)
-        lam[ix_pc:] = lam_max_pc
+        self.lam_pc, _ = self._max_mixing_length_similarity(self.ustar_pc, self.wb_pc)
+        lam[self.ix_pc :] = self.lam_pc
 
-        # TBD make lam_min a parameter?
-        lam[lam<0.01] = 0.01
+        lam[lam < self.lam_min] = self.lam_min
 
-        state.lam      = lam
-        state.ustar_pc = ustar_pc
-        state.wb_pc    = wb_pc
+        self.lam = lam
 
     def _max_mixing_length_similarity(self, ustar, wb):
         """
@@ -335,11 +903,10 @@ class MixingLengthModel(Model):
 
         fcor = abs(model.fcor)
         if wb == 0 or ustar == 0:
-            etastar2 = 1.
+            etastar2 = 1.0
         else:
-            etastar2 = 1. / (
-                1 + model.lam_star * ustar /
-                (model.kappa * fcor * model.RC * lobuk)
+            etastar2 = 1.0 / (
+                1 + model.lam_star * ustar / (model.kappa * fcor * model.RC * lobuk)
             )
 
         lam_max = etastar2 * model.lam_star * ustar / fcor
@@ -352,15 +919,13 @@ class MixingLengthModel(Model):
 
         Figure 7.2, right hand side.
         """
-        model = self
-        state = model.state
 
         # TBD rename such that name reflects that this is for mixed layer incl.
         # surface layer / Law of the Wall
-        lam_max = state.lam_max
-        lam = model.kappa * state.z #TBD Fig. 5.17b
+        lam_max = self.lam_max
+        lam = self.kappa * self.z  # TBD Fig. 5.17b
         # / (1 + 5*abs(state.z)/state.L_obukhov)
-        lam[lam>lam_max] = lam_max
+        lam[lam > lam_max] = lam_max
 
         return lam
 
@@ -370,27 +935,18 @@ class MixingLengthModel(Model):
 
         Figure 7.2, left hand side.
         """
-        model = self
-        state = model.state
 
-        wstar = convective_vel_scale(abs(state.ustar0), state.wb0, model.cml, state.mld)
+        wstar = convective_vel_scale(abs(self.ustar0), self.wb0, self.cml, self.mld)
 
         # TBD Sort of enhanced Obukhov scale... I guess
         # find book ref
-        L = wstar**3 / (model.kappa * state.wb0)
+        L = wstar**3 / (self.kappa * self.wb0)
 
         # Start with surface layer constant stress scaling
-        lam = model.kappa * abs(state.z) * (1-abs(state.z)/L)**2
-        lam[lam>state.lam_max] = state.lam_max
+        lam = self.kappa * abs(self.z) * (1 - abs(self.z) / L) ** 2
+        lam[lam > self.lam_max] = self.lam_max
 
         return lam
-
-
-class EddyCoefficientModel(Model):
-    """
-    Combines mixing length and ustar profile to eddy viscosity and
-    eddy diffusivities.
-    """
 
     def update_eddy_coefficients(self, **kwarg):
         """
@@ -400,12 +956,10 @@ class EddyCoefficientModel(Model):
 
         TBD add internal wave spectra in here? or when ustar is computed? How to do this in external module?
         """
-        model = self
-        state = model.state
 
         # --- ACTUAL LTC
         # now update the K fields
-        Km = state.ustar * state.lam
+        Km = self.ustar * self.lam
 
         # TBD
         # insert background / IW-driven mixing??
@@ -421,7 +975,7 @@ class EddyCoefficientModel(Model):
         # TBD clean up mess
         #  updated Km is going to be used in the .solve_steady_ekman routine
         Kh = Km
-        Ks = model.Ks_Kh_ratio * Kh
+        Ks = self.Ks_Kh_ratio * Kh
 
         # TBD --- do some ad hoc (?) adjustments
 
@@ -432,30 +986,175 @@ class EddyCoefficientModel(Model):
 
         # if ri_adjust: # TBD was set to True in miles' scripts
         # TBD alpha is weird...
-        alpha = alpha_nr(state.Ri)
-        Ks = np.where(state.z<=state.mld, alpha*Ks, Ks)
+        alpha = alpha_nr(self.Ri)
+        Ks = np.where(self.z <= self.mld, alpha * Ks, Ks)
 
-        with np.errstate(invalid='ignore'):
+        with np.errstate(invalid="ignore"):
             # final test: if model.K_adjust is nonzero, then set all Kh values
             #  below the mixed layer for which N2 is negative to K_adjust
-            if model.K_adjust:
-                Ks = np.where((state.z>state.mld) & (state.n2<0), model.K_adjust, Ks)
+            if self.K_adjust:
+                Ks = np.where((self.z > self.mld) & (self.n2 < 0), self.K_adjust, Ks)
 
         # Respect minimum values
-        Km[Km<model.km_min] = model.km_min
-        Ks[Ks<model.kh_min] = model.kh_min
+        Km[Km < self.km_min] = self.km_min
+        Ks[Ks < self.kh_min] = self.kh_min
 
-        state.Km = Km
-        state.Ks = Ks
-        state.Kh = state.Ks/model.Ks_Kh_ratio
+        self.Km = Km
+        self.Ks = Ks
+        self.Kh = self.Ks / self.Ks_Kh_ratio
 
 
-class LTCModel(
-    IceOceanInterfaceModel, # provides update_interface
-    MixingLengthModel, # provides update_mixing_length
-    EddyCoefficientModel, # provides update_eddy_coefficients
-    Model, # basic parameters
+class IceOceanInterface(
+    ModelState,
+    IceOceanInterfaceParams,
 ):
+    """An ice-ocean interface model"""
+
+    pass
+
+
+class IOBL(
+    ModelState,
+    WaterColumn,
+    IceOceanInterfaceParams,
+):
+    """
+    A turbulent ice-ocean boundary layer coupling the water column with the ice-ocean interface.
+    """
+
+    delU = param.Number(
+        default=None,
+        doc="""ustar/ velocity
+    ratio at shallowest grid point (from constant stress layer equations)""",
+    )
+
+    # TBD implement into _solve_steady_ekman !!
+    U_source = param.ClassSelector(
+        class_=(np.ndarray, complex, float),
+        default=None,
+        doc="""
+        Source function for the horizontal velocity (m s-2). May accomodate a
+        thermal wind. Treats source as barotropic
+        if given a (complex or real) number.
+        """,
+    )
+
+    # TBD make own Source/BoundaryCondition class??
+    T_btm_bc = param.Number(
+        default=None,
+        doc="""
+        Temperature bottom boundary condition. Can be either a fixed value (deg C)
+        or a flux (K m s-1, upward positive). Select using T_btm_bc_kind.)
+        """,
+    )
+
+    T_btm_bc_kind = param.ObjectSelector(
+        default="fixed",
+        objects=["flux", "value", "fixed"],
+        doc="""
+            Select the meaning of the T_btm_bc parameter. 'fixed' keeps the
+            previous' time step's bottom temperature.
+            """,
+    )
+
+    S_btm_bc = param.Number(
+        default=None,
+        doc="""
+        Salinity bottom boundary condition. Can be either a fixed value (g kg-1)
+        or a flux (g kg-1 m s-1, upward positive). Select using S_btm_bc_kind.)
+        """,
+    )
+
+    S_btm_bc_kind = param.ObjectSelector(
+        default="fixed",
+        objects=["flux", "value", "fixed"],
+        doc="""
+            Select the meaning of the S_btm_bc parameter. 'fixed' keeps the
+            previous' time step's bottom salinity.
+            """,
+    )
+
+    tracer_btm_bc = param.Number(
+        default=None,
+        doc="""
+        Tracer bottom boundary condition. Can be either a fixed value
+        or a flux (upward positive). Select using tracer_btm_bc_kind.)
+        """,
+    )
+
+    tracer_btm_bc_kind = param.ObjectSelector(
+        default="fixed",
+        objects=["flux", "value", "fixed"],
+        doc="""
+            Select the meaning of the tracer_btm_bc parameter. 'fixed' keeps the
+            previous' time step's bottom value.
+            """,
+    )
+
+    T_source = param.Array(default=None, doc="")
+    S_source = param.Array(default=None, doc="")
+    tracer_source = param.Array(default=None, doc="")
+
+    def __init__(self, *argv, **kwarg):
+        super().__init__(*argv, **kwarg)
+        self.Sff = lambda: self.S[0]  # auto-update
+        self.Tff = lambda: self.T[0]  # auto-update
+
+    def update_turbulence(self, **kwarg):
+
+        self.update_shear_driven_turbulence()  # new ustar
+        self.update_mixing_length()  # new lambda
+        self.update_eddy_coefficients()  # new Km, Kh, Ks
+
+    def init_ekman_spiral(self, **kwarg):
+        """
+        Make a reasonable guess for a boundary layer with a constant
+        eddy viscosity. Does not include a pycnocline or a Law-of-the-Wall regime.
+        """
+        if self.ustar0 is None and "Uice" in self.params_forced:
+            # use some reasonable sea ice drag coefficient to get first estimate
+            self.ustar0 = self.Uice * np.sqrt(4e-3)
+
+        if self.wb0 >= 0:
+            lam_max, _ = self._max_mixing_length_similarity(abs(self.ustar0), self.wb0)
+        elif self.wb0 < 0:
+            lam_max = self.cml * self.mld
+
+        # First guess at K: in neutral layer u* will decay exponentially
+
+        self.lam = lam_max * np.ones(np.shape(self.z))
+        Kmax = abs(self.ustar0) * lam_max
+
+        K = Kmax * np.ones(np.shape(self.z))
+        self.Km = deepcopy(K)
+        self.Kh = deepcopy(K)
+        self.Ks = deepcopy(K)
+        self.lam_max = lam_max
+
+        # initialize free Ekman spiral U = U0 * exp(-delta*z)
+        delta = np.sqrt(1j * self.fcor / Kmax)
+        tau0 = abs(self.ustar0) * self.ustar0
+        U0 = delta * tau0 / (1j * self.fcor)
+
+        self.U = U0 * np.exp(-delta * self.zz)
+        # state.solve_steady_ekman() # u, v, U
+        self.update_shear_driven_turbulence()
+
+    def calculate_ancillary(self):
+        """
+        TBD non-essential calculations
+
+        can be done offline
+        """
+
+        # TBD superfluous, write util or otherwise unify with above
+        cp = gsw.cp_t_exact(self.S, gsw.t_from_CT(self.S, self.T, self.zz), self.zz)
+        self.Fh = self.rho * cp * self.Kh * self.gradT
+
+        # self.Uice = self.U[0] + self.delU
+
+
+class SteadyLTCModel(IOBL):
     """
     Iteratively solves the steady state Ekman equation using
     the Local Turbulence Closure model.
@@ -471,85 +1170,50 @@ class LTCModel(
 
     """
 
-    maxit = param.Integer(default=20, doc="""
-        Maximum number of iterations of the steady LTC""")
+    maxit = param.Integer(
+        default=20,
+        doc="""
+        Maximum number of iterations of the steady LTC""",
+    )
 
-    tol = param.Number(default=0.01, doc="""
-        Convergence tolerance for the steady LTC.""")
-
-    # TBD implement into _solve_steady_ekman !!
-    U_source = param.ClassSelector(class_=(np.ndarray, complex, float),
-        default=None, doc="""
-        Source function for the horizontal velocity (m s-2). May accomodate a
-        thermal wind. Treats source as barotropic
-        if given a (complex or real) number.
-        """)
-
-    # TBD make own Source/BoundaryCondition class??
-    T_btm_bc = param.Number(default=None, doc="""
-        Temperature bottom boundary condition. Can be either a fixed value (deg C)
-        or a flux (K m s-1, upward positive). Select using T_btm_bc_kind.)
-        """)
-
-    T_btm_bc_kind = param.ObjectSelector(
-        default='fixed', objects=['flux', 'value', 'fixed'], doc="""
-            Select the meaning of the T_btm_bc parameter. 'fixed' keeps the
-            previous' time step's bottom temperature.
-            """)
-
-    S_btm_bc = param.Number(default=None, doc="""
-        Salinity bottom boundary condition. Can be either a fixed value (g kg-1)
-        or a flux (g kg-1 m s-1, upward positive). Select using S_btm_bc_kind.)
-        """)
-
-    S_btm_bc_kind = param.ObjectSelector(
-        default='fixed', objects=['flux', 'value', 'fixed'], doc="""
-            Select the meaning of the S_btm_bc parameter. 'fixed' keeps the
-            previous' time step's bottom salinity.
-            """)
-
-    tracer_btm_bc = param.Number(default=None, doc="""
-        Tracer bottom boundary condition. Can be either a fixed value
-        or a flux (upward positive). Select using tracer_btm_bc_kind.)
-        """)
-
-    tracer_btm_bc_kind = param.ObjectSelector(
-        default='fixed', objects=['flux', 'value', 'fixed'], doc="""
-            Select the meaning of the tracer_btm_bc parameter. 'fixed' keeps the
-            previous' time step's bottom value.
-            """)
-
-    # TBD put into state...??
-    T_source = param.Array(default=None, doc='')
-    S_source = param.Array(default=None, doc='')
-    tracer_source = param.Array(default=None, doc='')
-
-    def update_turbulence(self, **kwarg):
-        model = self
-        state = model.state
-
-        state.update_shear_driven_turbulence() # new ustar
-        model.update_mixing_length() # new lambda
-        model.update_eddy_coefficients() # new Km, Kh, Ks
+    tol = param.Number(
+        default=0.01,
+        doc="""
+        Convergence tolerance for the steady LTC.""",
+    )
 
     def find_steady_k(self, **kwarg):
         """
         Find an iterative solution to the boundary layer problem.
         """
-        model = self
-        state = model.state
 
-        for j in range(model.maxit):
-            old_state = deepcopy(state)
-            model.update_turbulence()
-            model._solve_steady_ekman() # calculate new currents
+        for j in range(self.maxit):
+            old_state = deepcopy(self)
+            self.update_turbulence()
+            self._solve_steady_ekman()  # calculate new currents
+            # self.update_interface() # WARNING - THIS LINE SEEMS TO LEAD TO OSCILLATIONS/DESTROY CONVERGENCE
+            # TODO: make this dependent on whether wb0 etc. are forced or dynamic!
             # Do at least two iterations
-            if j > 2 and model._has_converged(state, old_state):
-                return
+            if j > 2 and self._has_converged(self, old_state):
+                if "ustar0" in self.params_forced:
+                    # stress already matches the forced value by definition
+                    return
+                elif "Uice" in self.params_forced:
+                    # still need to hit target ice-ocean relative velocity
+                    self._update_interface_shear()  # update ustar0
+                    logratio = np.log(abs(self.zz[0]) / self.z0) / self.kappa
+                    delU = self.ustar0 * logratio
+                    Uice_reached = (
+                        self.U[0] + delU
+                    )  # the Uice we would get with current value of ustar0
+                    ratio = Uice_reached / self.Uice
+                    if abs(ratio - 1) > 5e-3:
+                        self.ustar0 /= ratio
+                    else:
+                        # stress matches the target value
+                        return
 
-        model.param.warning('Model at time {} did not converge!'.format(
-            state.time
-        ))
+        self.param.warning("Model at time {} did not converge!".format(self.time))
 
     def _has_converged(self, state, old_state):
         model = self
@@ -566,85 +1230,129 @@ class LTCModel(
 
         Ch. 7.3
         """
-        model = self
-        state = model.state
 
-        if model.U_source is not None:
-            raise NotImplementedError('Does not currently respect U_source') #TBD
+        if self.U_source is not None:
+            raise NotImplementedError("Does not currently respect U_source")  # TBD
 
-        nz = len(state.z)
+        nz = len(self.z)
 
         # init
-        A = np.zeros(nz-1, dtype=complex)
-        B = np.zeros(nz-1, dtype=complex)
-        C = np.zeros(nz-1, dtype=complex)
-        D = np.zeros(nz-1, dtype=complex)
-        E = np.zeros(nz-1, dtype=complex)
+        A = np.zeros(nz - 1, dtype=complex)
+        B = np.zeros(nz - 1, dtype=complex)
+        C = np.zeros(nz - 1, dtype=complex)
+        D = np.zeros(nz - 1, dtype=complex)
+        E = np.zeros(nz - 1, dtype=complex)
 
         # The equations in chapter 7 are formulated for z upward positive.
         # To avoid confusion we adopt that convention in this integration:
-        dz, dzz = -state.dz, -state.dzz
+        dz, dzz = -self.dz, -self.dzz
 
-        tau0 = abs(state.ustar0) * state.ustar0
+        tau0 = abs(self.ustar0) * self.ustar0
 
-        A[0] = state.Km[1]/(dz[0]*dzz[0])
-        ix = slice(1, nz-1)
+        A[0] = self.Km[1] / (dz[0] * dzz[0])
+        ix = slice(1, nz - 1)
         ix_plus_1 = slice(2, nz)
-        ix_minus_1 = slice(0, nz-2)
-        A[ix] = state.Km[ix_plus_1] / (dz[ix] * dzz[ix])
-        C[ix] = state.Km[ix] / (dz[ix] * dzz[ix_minus_1])
-        B[ix] = -(1j * model.fcor + A[ix] + C[ix])
+        ix_minus_1 = slice(0, nz - 2)
+        A[ix] = self.Km[ix_plus_1] / (dz[ix] * dzz[ix])
+        C[ix] = self.Km[ix] / (dz[ix] * dzz[ix_minus_1])
+        B[ix] = -(1j * self.fcor + A[ix] + C[ix])
 
-        D[0] = -tau0/(dz[0] * (A[0] + 1j * model.fcor))
-        E[0] = A[0]/(A[0] + 1j*model.fcor)
-        for i in range(1, nz-1):
-            denominator = B[i]+C[i]*E[i-1]
-            D[i] = -C[i]*D[i-1] / denominator
+        D[0] = -tau0 / (dz[0] * (A[0] + 1j * self.fcor))
+        E[0] = A[0] / (A[0] + 1j * self.fcor)
+        for i in range(1, nz - 1):
+            denominator = B[i] + C[i] * E[i - 1]
+            D[i] = -C[i] * D[i - 1] / denominator
             E[i] = -A[i] / denominator
 
         # Eqs. 7.25, 7.6
         # Fix ageostrophic background to 0
         u = np.zeros(nz, dtype=complex)
-        for i in range(nz-2, -1, -1):
-            u[i]=D[i] + E[i] * u[i+1]
+        for i in range(nz - 2, -1, -1):
+            u[i] = D[i] + E[i] * u[i + 1]
 
-        state.U = u
-
-    def init_ekman_spiral(self, **kwarg):
-        """
-        Make a reasonable guess for a boundary layer with a constant
-        eddy viscosity. Does not include a pycnocline or a Law-of-the-Wall regime.
-        """
-        model = self
-        state = model.state
-
-        if state.wb0 >= 0:
-            lam_max, _ = model._max_mixing_length_similarity(abs(state.ustar0), state.wb0)
-        elif state.wb0 < 0:
-            lam_max = model.cml * state.mld
-
-        # First guess at K: in neutral layer u* will decay exponentially
-
-        state.lam = lam_max * np.ones(np.shape(state.z))
-        Kmax = abs(state.ustar0) * lam_max
-
-        K = Kmax * np.ones(np.shape(state.z))
-        state.Km = deepcopy(K)
-        state.Kh = deepcopy(K)
-        state.Ks = deepcopy(K)
-        state.lam_max = lam_max
-
-        # initialize free Ekman spiral U = U0 * exp(-delta*z)
-        delta = np.sqrt(1j*model.fcor / Kmax)
-        tau0 = abs(state.ustar0) * state.ustar0
-        U0 = delta * tau0 / (1j * model.fcor)
-
-        state.U = U0 * np.exp(-delta * state.zz)
-        # state.solve_steady_ekman() # u, v, U
-        state.update_shear_driven_turbulence()
+        self.U = u
 
     def steady_ltc(self):
         self.init_ekman_spiral()
+        self._update_interface_shear()
         self.find_steady_k()
-        self.state.update_ctd()
-        self.update_interface()
+        self.update_ctd()
+        self._update_interface_shear()
+
+
+def get_haline_QL(QL, Sice):
+    """
+    Maykut (1985, his equations 6.13 and 19)
+    """
+
+    return QL * (1 - 0.03 * Sice)
+
+
+def interface_fluxes(
+    uturb,
+    Tff,
+    Sff,
+    hice,
+    Sice,
+    w_perc,
+    qcond,
+    use_three_eqn,
+    cht,
+    chs,
+    grav,
+    QL,
+):
+    """ "
+    Calculate wT0, wS0, wb0, w_interface using the 2- or 3-equation formulas.
+    his function can handle vectors.
+
+    See Figure 6.2,  7.2
+    """
+    # TBD use bulk stanton number? provide util that
+    # gives wT0, wS0, wb0 from St* parameterization?
+    QL_haline = get_haline_QL(QL=QL, Sice=Sice)
+    if use_three_eqn:
+        # Eqns 6.8, 6.9
+        # TODO Neglect difference between interface pressure and ice draft
+        m = -gsw.t_freezing(Sff, hice, 1) / Sff
+        T_L = QL_haline * chs / cht
+        gamma_2 = w_perc / cht / uturb
+        AA = m * (1 + gamma_2)
+        T_H = Tff - qcond / cht / uturb - m * gamma_2 * Sice
+
+        BB = T_H + T_L + gamma_2 * QL_haline - AA * Sice
+        CC = -(Sice * T_H + T_L * Sff + gamma_2 * QL_haline * Sice)
+        # solve AA*S0^2+BB*S0+CC=0
+        S0 = (-BB + np.sqrt(BB**2 - 4 * AA * CC)) / 2 / AA
+        T0 = -m * S0
+        wT0 = cht * uturb * (Tff - T0)
+        wS0 = chs * uturb * (Sff - S0)
+        w_interface = wS0 / (S0 - Sice) - w_perc
+
+    else:
+        S0 = Sff
+        # TODO Neglect difference between interface pressure and ice draft
+        T0 = gsw.t_freezing(S0, hice, 1)
+        wT0 = cht * uturb * (Tff - T0)
+        w_interface = (wT0 - qcond) / QL_haline
+        wS0 = (w_interface + w_perc) * (S0 - Sice)
+
+    # TBD need to distinguish this one from the one given at instantiation
+    # if given!
+    # Could do this by keeping two wb0:
+    # forcing.wb0 (has precedence for mixing length calc),
+    # state.wb0 (calculated)
+
+    # TODO Neglect difference between pressure and depth of ice draft
+    alpha = gsw.alpha(S0, T0, hice)
+    beta = gsw.beta(S0, T0, hice)
+    wb0 = grav * (beta * wS0 - alpha * wT0)
+
+    T0 = np.where(uturb == 0, Tff, T0)  # TODO: suspicious...
+    S0 = np.where(uturb == 0, Sff, S0)  # TODO: suspicious...
+    wT0 = np.where(uturb == 0, 0, wT0)
+    wS0 = np.where(uturb == 0, 0, wS0)
+    wb0 = np.where(uturb == 0, 0, wb0)
+    w_interface = np.where(uturb == 0, 0, w_interface)
+
+    return wb0, w_interface, wT0, wS0, T0, S0

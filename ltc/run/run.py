@@ -1,23 +1,23 @@
 """
 The infrastructure for time integrations. Makes the following components
-play together: stepper, model, state, and forcing.
+play together: stepper, model, and forcing.
 """
 
 from copy import deepcopy
+import warnings
 
 import param
 import numpy as np
 
 from .stepper import Stepper
 from .forcing import Forcing
-from ..iobl.state import State
-from ..iobl.model import Model
 
 try:
     import xarray as xr
 except ImportError:
     xr = None
-    warning.warn('xarray not available.')
+    warnings.warn("xarray not available.")
+
 
 class ModelRun(param.Parameterized):
     """
@@ -27,16 +27,25 @@ class ModelRun(param.Parameterized):
     initial model state.
     """
 
-    stepper = param.ClassSelector(Stepper, allow_None=False, doc="""
-        """)
+    stepper = param.ClassSelector(
+        Stepper,
+        allow_None=False,
+        doc="""
+        """,
+    )
 
-    duration = param.Number(default=0, doc="""
-        Duration of model run (days).""")
+    duration = param.Number(
+        default=0,
+        doc="""
+        Duration of model run (days).""",
+    )
 
-    write_output_step = param.Integer(default=0, doc="""
+    write_output_step = param.Integer(
+        default=0,
+        doc="""
         If >=1, write out state every nth step.
-        Collected states can be accessed using the .states property.""")
-
+        Collected states can be accessed using the .states property.""",
+    )
 
     def __init__(self, *argv, **kwarg):
         super().__init__(*argv, **kwarg)
@@ -49,8 +58,7 @@ class ModelRun(param.Parameterized):
         if xr is None:
             return run._states
         else:
-            return xr.concat(run._states, 'time')
-
+            return xr.concat(run._states, "time")
 
     def execute(self):
         """
@@ -58,8 +66,7 @@ class ModelRun(param.Parameterized):
         """
         stepper = self.stepper
         forcing = stepper.forcing
-        model   = stepper.model
-        state   = model.state
+        state = stepper.state
 
         self._states = []
         stop_time = state.time + self.duration
@@ -80,4 +87,4 @@ class ModelRun(param.Parameterized):
         self._write_output()
 
     def _write_output(self):
-        self._states.append(self.stepper.model.state.output_state())
+        self._states.append(self.stepper.state.output_state())

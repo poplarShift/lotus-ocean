@@ -4,6 +4,13 @@ def get_git_version():
     Save output to file
     """
     from subprocess import check_output
-    output = check_output(['git', 'describe', '--dirty',]).decode()
-    version = output[:-1] # had trailing newline
+
+    output = check_output(
+        [
+            "git",
+            "describe",
+            "--dirty",
+        ]
+    ).decode()
+    version = output[:-1]  # had trailing newline
     return version
