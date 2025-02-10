@@ -19,7 +19,7 @@ def get_transfer_coefficients(state):
 
     Notes
     -----
-        References: TBD book pages where this is discussed!
+        References: E.g., section 6.3
     """
     if state.wb0 >= 0:
         return dict(cht=0.0093, chs=0.0093 / 35)
@@ -31,24 +31,20 @@ def get_transfer_coefficients(state):
 
 def convective_vel_scale(ustar, wb, cml, dml):
     """
-    Eqn. 5.8
+    Convective turbulent velocity scale.
 
-    TBD use lmax or cml*dml?
+    See Eqn. 5.8. In Figure 5.17c, it is apparent that lmax = cml*dml.
     """
     return (ustar**3 - wb * cml * dml) ** (1 / 3)
 
 
 def alpha_nr(Ri):
     """
-    Return the ratio of eddy diffusivities.
+    Return the ratio of eddy diffusivities (heat, salt) to eddy viscosity.
 
-    Uses a parameterization of Turner's (1973) relation (McPhee 2008 pp 149, 161)
-    with Rc=0.2, b=1.4.
-
-    TBD check those parameters!
+    Uses a parameterization of Turner's (1973) relation with Rc=0.2, b=1.4.
+    See Sec. 7.6, page 142
     """
-    # TBD. what to do with Ri < 0.0079??
-
     with np.errstate(invalid="ignore"):
         alpha = np.where(
             Ri > 5,

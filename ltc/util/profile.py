@@ -31,8 +31,7 @@ def interpolate_df_on_column(df, on_values, col="zz"):
 
 def convert_ctd(S, T, depth, hice, lon, lat, ts_units, depth_unit):
     """
-    TBD docstring
-    Convert CTD profile to suitable form
+    Convert CTD profile to suitable form for instantiating a SteadyLTCModel.
 
     Arguments
     ---------

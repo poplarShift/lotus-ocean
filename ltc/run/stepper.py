@@ -20,8 +20,7 @@ class Stepper(param.Parameterized):
 
     Subclasses will have to implement the `_step_fields` and `_update_state` methods.
 
-    TBD:
-    Allows specifying viscosities for arbitrary scalar tracer fields.
+    Allows specifying the viscosity for an arbitrary scalar tracer field.
 
     Notes
     -----
@@ -42,9 +41,6 @@ class Stepper(param.Parameterized):
         doc="""Time step (h)""",
     )
 
-    # see e.g. shampine2009stability
-    # - there are various ways of dealing with the numerical instability
-    # TBD use his eqn 5, 6 to infer weighting coefficients?
     leapfrog_smoother = param.Number(
         default=0.08,
         bounds=(0, 0.5),
@@ -53,15 +49,15 @@ class Stepper(param.Parameterized):
         at each time step.
         Shampine et al. 1983 quote Bragg as suggesting 1/4 + 1/2 + 1/4 (p. 167).
         This behaviour would be recovered for leapfrog_smoother=0.5.
-        Current default set as per pers. comm. Miles McPhee.""",
+        Current default set as per pers. comm. Miles McPhee.
+        For further reading, see e.g. Shampine 2009, DOI: 10.1016/j.amc.2008.11.029
+        """,
     )
 
-    tracer_viscosities = param.ListSelector(
-        default=[],
+    tracer_viscosity = param.ObjectSelector(
+        default="Ks",
         objects=["Km", "Kh", "Ks"],
-        doc="""
-        List of eddy viscosities, one for each tracer and in the same order.
-        """,
+        doc="""Which viscosity to use for the tracer. Default: Salt diffusivity.""",
     )
 
     def step(self, **kwarg):
@@ -72,17 +68,15 @@ class Stepper(param.Parameterized):
         forcing = stepper.forcing
         state = stepper.state
 
-        stepper.param.debug(
-            "======== Starting time step: {} ========".format(state.time)
+        stepper.param.log(
+            param.INFO, "======== Starting time step: {} ========".format(state.time)
         )
 
         if forcing is not None:
             # release readonly
             forcing.force(state)
-            # TBD could set readonly-attributes in forcing.force
         state.adjust_model_parameters()
 
-        # TBD could have some mechanism that prevents parameters from updating if they were already set by forcing... !
         stepper._update_state()  # Need implementation in subclass
 
         # Step integration
@@ -142,14 +136,13 @@ class Stepper(param.Parameterized):
             btm_bc_kind = state.S_btm_bc_kind
 
         elif var == "tracer":
-            raise NotImplementedError("Need to vectorize leapfrog first")
-            # if (
-            #     state.tracer is not None
-            #     and len(model.tracer_viscosities) != state.tracer.shape[1]
-            # ):
-            #     raise ValueError("""Got {} viscosities but {} tracers""".format(
-            #         len(model.tracer_viscosities), state.tracer.shape[1]
-            #     ))
+            theta = state.tracer
+            theta_jm1 = state.tracer_previous
+            K = getattr(state, state.tracer_viscosity)
+            Q = state.tracer_source
+            F0 = 0  # This is an ad-hoc choice of zero surface flux for the tracer.
+            btm_bc_val = state.tracer_btm_bc
+            btm_bc_kind = state.tracer_btm_bc_kind
 
         elif var == "U":
             theta = state.U
@@ -187,7 +180,7 @@ class Stepper(param.Parameterized):
         theta = specs["theta"]
         theta_jm1 = specs["theta_jm1"]
 
-        theta_jp1 = stepper._solve_leapfrog(
+        theta_jp1 = stepper._solve_implicit(
             theta_jm1,
             specs["dt2"],
             specs["dz"],
@@ -208,17 +201,10 @@ class Stepper(param.Parameterized):
         )
         theta[:] = theta_jp1[:]
 
-    # TBD rename into "solve_implicit" or something similar. doesn't really have
-    # to do with the leap frog scheme...
     @staticmethod
-    def _solve_leapfrog(theta_jm1, dt2, dz, dzz, K, Q, F0, btm_bc_val, btm_bc_kind):
+    def _solve_implicit(theta_jm1, dt2, dz, dzz, K, Q, F0, btm_bc_val, btm_bc_kind):
         """
-        Step scalar field theta using a leap-frog scheme.
-
-        TBD
-        Use an implicit scheme where vertical gradients are calculated based on
-        the future (j+1) time step. This improves stability (no "overshooting")
-        of flux divergences.
+        Step scalar field theta using what the book calls a leap-frog scheme.
 
         Arguments
         ---------
@@ -288,7 +274,7 @@ class Stepper(param.Parameterized):
         return theta
 
     @staticmethod
-    def _solve_leapfrog_coriolis(theta_jm1, dt2, fcor, dz, dzz, K, Q, F0):
+    def _solve_implicit_coriolis(theta_jm1, dt2, fcor, dz, dzz, K, Q, F0):
         """
         This code only left here for educational purposes. It is not supposed to be
         used as it treats the Coriolis force not as a time-centered source but as
@@ -350,13 +336,15 @@ class TempSalStepper(Stepper):
         stepper = self
         stepper._step_field(var="T", **kwarg)
         stepper._step_field(var="S", **kwarg)
+        if stepper.state.tracer is not None:
+            stepper._step_field(var="tracer", **kwarg)
 
     def _update_state(self, **kwarg):
         stepper = self
         state = stepper.state
 
         state.update_ctd()
-        state.update_interface()
+        state.update_interface(update_wb0=True)
         state.find_steady_k()  # new Km (and current field)
 
 
@@ -370,11 +358,13 @@ class TempSalVelStepper(Stepper):
         stepper._step_field(var="U", **kwarg)
         stepper._step_field(var="T", **kwarg)
         stepper._step_field(var="S", **kwarg)
+        if stepper.state.tracer is not None:
+            stepper._step_field(var="tracer", **kwarg)
 
     def _update_state(self, **kwarg):
         stepper = self
         state = stepper.state
 
         state.update_ctd()
-        state.update_interface()
+        state.update_interface(update_wb0=True)
         state.update_turbulence()

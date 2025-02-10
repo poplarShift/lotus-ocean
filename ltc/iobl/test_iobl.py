@@ -13,7 +13,7 @@ from ltc.iobl.util import get_transfer_coefficients
 from ltc.util.param import ValueSetLogger
 
 
-def test_sltc():
+def make_model():
     data = pd.read_csv(top_level / "data/TS.csv")
 
     model = SteadyLTCModel.from_ctd(
@@ -35,7 +35,42 @@ def test_sltc():
         S_btm_bc_kind="flux",
         S_btm_bc=0,
     )
-    model.steady_ltc()
+    return model
+
+
+def test_steady_ltc_params():
+    model = make_model()
+    with ValueSetLogger(model) as vl:
+        model.init_ekman_spiral()
+        assert {"lam", "Km", "Kh", "Ks", "lam_max", "U", "Ri", "ustar"} == {
+            e.param for e in vl.events
+        }
+
+    with ValueSetLogger(model) as vl:
+        model.find_steady_k()
+        assert {
+            "Km",
+            "Kh",
+            "Ks",
+            "U",
+            "ustar_pc",
+            "wb_pc",
+            "Ri",
+            "lam_pc",
+            "ustar",
+            "ix_pc",
+            "lam",
+            "wb",
+            "L_obukhov",
+        } == {e.param for e in vl.events}
+
+    with ValueSetLogger(model) as vl:
+        model.update_ctd()
+        assert {"rho", "gradT", "gradS", "n2"} == {e.param for e in vl.events}
+
+    with ValueSetLogger(model) as vl:
+        model.finalize_interface_shear()
+        assert {"Uice"} == {e.param for e in vl.events}
 
 
 def test_fix_ice_velocity():
@@ -89,8 +124,8 @@ def test_z0_vs_ustar0_for_given_Uice():
         model.steady_ltc()
         return model.ustar0, model.U[0]
 
-    z0 = np.arange(1e-4, 0.1, 5e-3)
-    Uice = [0.01, 0.05, 0.1, 0.2]
+    z0 = np.array([1e-4, 5e-4, 1e-3, 5e-3, 1e-2, 5e-2, 1e-1])
+    Uice = [0.01, 0.1, 0.2]
     ustar0 = defaultdict(lambda: np.ones_like(z0, dtype=complex))
     U0 = defaultdict(lambda: np.ones_like(z0, dtype=complex))
     for i, z in enumerate(z0):
@@ -118,7 +153,8 @@ def test_z0_vs_ustar0_for_given_Uice():
     plt.savefig("out/tests/iobl/U0-vs-z0-for-given-Uice.png")
 
     for U in Uice:
-        assert np.all(np.abs(U0[U])<U)
+        assert np.all(np.abs(U0[U]) < U)
+
 
 def test_z0_vs_U0_for_given_ustar0():
     zz = np.arange(0, 60) + 0.5
@@ -144,8 +180,8 @@ def test_z0_vs_U0_for_given_ustar0():
         model.steady_ltc()
         return model.Uice, model.U[0]
 
-    z0 = np.arange(1e-4, 0.1, 5e-3)
-    ustar0 = [0.002, 0.005, 0.01, 0.02]
+    z0 = np.array([1e-4, 5e-4, 1e-3, 5e-3, 1e-2, 5e-2, 1e-1])
+    ustar0 = [0.002, 0.01, 0.02]
     Uice = defaultdict(lambda: np.ones_like(z0, dtype=complex))
     U0 = defaultdict(lambda: np.ones_like(z0, dtype=complex))
     for i, z in enumerate(z0):
@@ -171,32 +207,3 @@ def test_z0_vs_U0_for_given_ustar0():
     plt.title(f"First grid cell velocity (U0) vs z0")
     plt.legend([f"ustar0={U} m s-1" for U in ustar0])
     plt.savefig("out/tests/iobl/U0-vs-z0-for-given-ustar0.png")
-
-
-def test_set_values():
-    zz = np.arange(0, 60) + 0.5
-    salinity = 35 * np.ones_like(zz)
-    temperature = -1.8 * np.ones_like(zz)
-    salinity = gsw.SA_from_SP(salinity, zz, 0, -70)
-    temperature = gsw.CT_from_pt(salinity, temperature)
-    speed = 0.1
-
-    model = SteadyLTCModel.from_ctd(
-        time=0,
-        latitude=-70,
-        SA=salinity,
-        CT=temperature,
-        zz=zz,
-        z0=0.0025,
-        Sice=0,
-        Uice=speed,
-        wb0=0,
-        hice=10,
-        qcond=0,
-    )
-
-    with ValueSetLogger(model) as vl:
-        model.steady_ltc()
-        ev = vl.events
-
-    assert "wb0" not in {e.param for e in ev}

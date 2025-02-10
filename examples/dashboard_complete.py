@@ -1,4 +1,5 @@
 from pathlib import Path
+from copy import copy
 
 top_level = Path(__file__).resolve().parent.parent
 import sys
@@ -14,6 +15,7 @@ import xarray as xr
 
 from ltc.iobl import SteadyLTCModel
 from ltc.iobl.util import get_transfer_coefficients, get_mixed_layer_depth_sigth_crit
+from ltc.util.param import ParamProtectFrozen
 
 import holoviews as hv
 
@@ -26,6 +28,7 @@ import hvplot.xarray
 import hvplot.pandas
 
 import param
+# param.get_logger().setLevel(param.DEBUG)
 import panel as pn
 
 pn.extension()
@@ -84,7 +87,8 @@ class Viewer(param.Parameterized):
             T_btm_bc=0,
             S_btm_bc_kind="flux",
             S_btm_bc=0,
-            params_dynamic=["wb0"],
+            params_dynamic=copy(self.model_diagnostics),
+            protect_frozen=False, # otherwise, we run into trouble when setting parameters using widgets
         )
         self.update_model()
 
@@ -95,11 +99,14 @@ class Viewer(param.Parameterized):
         watch=True,
     )
     def update_model(self):
-        self.model.init_ekman_spiral()
-        self.model.find_steady_k()
-        self.model.update_interface()
-        self.model._update_interface_shear()
-        self.ds = self.model.output_state().isel(time=0).drop("time")
+        with ParamProtectFrozen(self.model):
+            # This is more of a safety - we want to be sure that no parameter is
+            # modified that should not
+            self.model.init_ekman_spiral()
+            self.model.find_steady_k()
+            self.model.update_interface()
+            self.model.finalize_interface_shear()
+            self.ds = self.model.output_state().isel(time=0).drop("time")
 
     def controls(self):
         return pn.Column(
@@ -119,9 +126,8 @@ class Viewer(param.Parameterized):
             pn.pane.Markdown("# Diagnostics"),
             pn.Row(
                 pn.Param(
-                    self.model, parameters=self.model_control_params, name="Diagnostics"
+                    self.model, parameters=self.model_diagnostics, name="Diagnostics"
                 ),
-                # pn.Param(self.model.state, parameters=self.state_diagnostics, name='Diagnostics')
             ),
         )
 
@@ -155,19 +161,23 @@ class Viewer(param.Parameterized):
             )
         )
 
+def make_app():
+    p = Viewer()
 
-p = Viewer()
+    for c in p.model_control_params + p.model_diagnostics:
+        setattr(getattr(p.model.param, c), "bounds", (-100, 100))
 
-for c in p.model_control_params + p.model_diagnostics:
-    setattr(getattr(p.model.param, c), "bounds", (-100, 100))
+    # widgets = {'wb0': pn.widgets.LiteralInput, 'view_var': pn.widgets.LiteralInput}
+    pn.Param._mapping[param.Number] = pn.widgets.LiteralInput
 
-# widgets = {'wb0': pn.widgets.LiteralInput, 'view_var': pn.widgets.LiteralInput}
-pn.Param._mapping[param.Number] = pn.widgets.LiteralInput
+    app = pn.Row(
+        p.controls,
+        pn.Column(p.view_profile, p.view_ctd),
+        p.diagnostics,
+    )
+    return app
 
-app = pn.Row(
-    p.controls,
-    pn.Column(p.view_profile, p.view_ctd),
-    p.diagnostics,
-)
+if pn.state.served:
+    pn.extension(sizing_mode="stretch_width")
+    make_app().servable()
 
-app.servable()

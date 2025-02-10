@@ -1,6 +1,6 @@
 import pytest
 import param
-from ltc.util.param import ParamWatchdog, ParamForcer, ValueSetLogger
+from ltc.util.param import ParamWatchdog, ParamUnfreezer, ValueSetLogger
 
 
 class Dummy(ParamWatchdog):
@@ -9,33 +9,36 @@ class Dummy(ParamWatchdog):
 
 
 def test_paramwatchdog():
-    p = Dummy(watch_param_set_events=True, a=99, params_forced=["a"])
+    p = Dummy(watch_param_set_events=True, a=99, params_frozen=["a"])
     with pytest.raises(Exception):
         p.a = 123
 
-    p = Dummy(watch_param_set_events=True, a=99, params_forced=[])
+    p = Dummy(watch_param_set_events=True, a=99, params_frozen=[])
     p.a = 123
 
-def test_params_forced_default():
+
+def test_params_frozen_default():
     p = Dummy(watch_param_set_events=True, a=99)
-    assert p.params_forced == ['a']
+    assert p.params_frozen == ["a"]
     with pytest.raises(Exception):
         p.a = 123
 
-def test_param_forcer():
-    p = Dummy(watch_param_set_events=True, a=99, params_forced=["a"])
-    with ParamForcer(p):
+
+def test_param_unfreezer():
+    p = Dummy(watch_param_set_events=True, a=99, params_frozen=["a"])
+    with ParamUnfreezer(p):
         p.a = 123
 
+
 def test_value_set_logger():
-    p = Dummy(watch_param_set_events=True, a=99, params_forced=[])
+    p = Dummy(watch_param_set_events=True, a=99, params_frozen=[])
     with ValueSetLogger(p) as vl:
         ev0 = vl.events
         p.a = 9
         ev1 = vl.events
 
     assert ev0 == []
-    assert {'a'} == {e.param for e in ev1}
+    assert {"a"} == {e.param for e in ev1}
 
     with ValueSetLogger(p) as vl:
         ev0 = vl.events
@@ -43,4 +46,4 @@ def test_value_set_logger():
         ev1 = vl.events
 
     assert ev0 == []
-    assert {'b'} == {e.param for e in ev1}
+    assert {"b"} == {e.param for e in ev1}

@@ -12,35 +12,40 @@ top_level = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(top_level))
 
 from ltc.iobl import SteadyLTCModel
-from ltc.util.param import ParamForcer
+from ltc.util.param import ParamUnfreezer
 
 pn.extension()
 hv.extension("bokeh")
-data = pd.read_csv(top_level / "data/TS_stable.csv")
-data['CT'] = data['CT'].rolling(window=5, center=True).mean().interpolate(method='bfill')
 
-Uice_start = 0.01
-Uice_widget = pn.widgets.FloatSlider(
-    name="Ice drift speed",
-    start=0.01,
-    end=0.3,
-    step=0.01,
-    value=Uice_start,
-    format=PrintfTickFormatter(format="%.2f m/s"),
+
+ustar0_start = 0.005
+ustar0_widget = pn.widgets.FloatSlider(
+    name="Ice-ocean interface friction velocity (ustar0)",
+    start=0.001,
+    end=0.02,
+    step=0.001,
+    value=ustar0_start,
+    format=PrintfTickFormatter(format="%.4f m/s"),
 )
 
 z0_start = 3e-2
 z0_widget = pn.widgets.FloatSlider(
     name="z0",
     start=1e-4,
-    end=0.5,
+    end=0.1,
     step=5e-4,
     value=z0_start,
     format=PrintfTickFormatter(format="%.3f m"),
 )
 
 
-def get_model(Uice=Uice_start, z0=z0_start):
+def get_model(ustar0=ustar0_start, z0=z0_start):
+
+    data = pd.read_csv(top_level / "data/TS_stable.csv")
+    data["CT"] = (
+        data["CT"].rolling(window=5, center=True).mean().interpolate(method="bfill")
+    )
+
     model = SteadyLTCModel.from_ctd(
         time=0,
         latitude=-70,
@@ -49,30 +54,27 @@ def get_model(Uice=Uice_start, z0=z0_start):
         zz=data["zz"],
         z0=z0,
         Sice=0,
-        Uice=Uice,
-        wb0=1.5e-8,
+        ustar0=ustar0,
+        wb0=0,
+        hice=10,
         qcond=0,
-        watch_param_set_events=True,
-        cht=0.0093,
-        chs=0.0057,
-        T_btm_bc_kind="flux",
-        T_btm_bc=0,
-        S_btm_bc_kind="flux",
-        S_btm_bc=0,
         params_dynamic=["wb0"],
     )
+
+    model.steady_ltc()
     # print('z0 at ', model.z0)
-    # with ParamForcer(model):
+    # with ParamUnfreezer(model):
     #     if Uice is not None:
     #         model.Uice = Uice
     #     if z0 is not None:
     #         model.z0 = z0
-    model.init_ekman_spiral()
-    model.find_steady_k()
+    # model.init_ekman_spiral()
+    # model.find_steady_k()
     model.update_interface()
-    # print('z0 at ', model.z0)
-    model._update_interface_shear()
-    # print('z0 at ', model.z0)
+    # # print('z0 at ', model.z0)
+    print("z0 at ", model.z0)
+    print("ustar0 at", model.ustar0)
+    print("Uice at", model.Uice)
     return model
 
 
@@ -81,7 +83,7 @@ def _plot_profile(model):
     T = ds["T"].hvplot(ylabel="Temperature (deg C)")
     S = ds["S"].hvplot(ylabel="Salinity (g kg-1)")
     Uice = hv.Scatter([(0, np.abs(model.Uice))])
-    U = np.abs(ds["U"]).hvplot(ylabel="Speed (m s-1)", ylim=(-.01, 0.4)) * Uice
+    U = np.abs(ds["U"]).hvplot(ylabel="Speed (m s-1)", ylim=(-0.01, 0.4)) * Uice
     Fh0 = hv.Scatter([(0, model.wT0 * 4e6)])
     Fh = (ds["Fh"].where(ds["Fh"] > 1e-3, 1e-5)).hvplot(
         ylim=(1e-3, 1e3),
@@ -112,31 +114,32 @@ def _plot_profile(model):
     return l
 
 
-model = get_model()
-plot_panel = pn.pane.HoloViews(_plot_profile(model))
-
-
 def callback_Uice(target, event):
     print("------- Setting Uice to ", event.new)
-    model = get_model(Uice=event.new, z0=z0_widget.value)
-    print("delU now at  ", abs(model.delU))
+    model = get_model(ustar0=event.new, z0=z0_widget.value)
     print("ustar0 now at ", abs(model.ustar0))
     target.object = _plot_profile(model)
-
-
-Uice_widget.link(plot_panel, callbacks={"value": callback_Uice})
 
 
 def callback_z0(target, event):
     print("----- Setting z0 to ", event.new)
-    model = get_model(z0=event.new, Uice=Uice_widget.value)
-    print("delU now at  ", abs(model.delU))
+    model = get_model(z0=event.new, ustar0=ustar0_widget.value)
     print("ustar0 now at ", abs(model.ustar0))
     target.object = _plot_profile(model)
 
 
-z0_widget.link(plot_panel, callbacks={"value": callback_z0})
+def make_app():
+    model = get_model()
+    plot_panel = pn.pane.HoloViews(_plot_profile(model))
+
+    ustar0_widget.link(plot_panel, callbacks={"value": callback_Uice})
+
+    z0_widget.link(plot_panel, callbacks={"value": callback_z0})
+
+    app = pn.Column(ustar0_widget, z0_widget, plot_panel, width=900)
+    return app
 
 
-app = pn.Column(Uice_widget, plot_panel)
-app.servable()
+if pn.state.served:
+    pn.extension(throttled=True, sizing_mode="stretch_width")
+    make_app().servable()

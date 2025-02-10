@@ -21,7 +21,7 @@ def test_update_interface():
     )
 
     with ValueSetLogger(model) as vl:
-        model.update_interface()
+        model.update_interface(update_wb0=True)
         ev = vl.events
 
     assert {"S0", "T0", "wS0", "wT0", "wb0", "w_interface"} == {e.param for e in ev}

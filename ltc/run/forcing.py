@@ -9,7 +9,7 @@ import gsw
 import numpy as np, pandas as pd
 
 from ltc.util.time import Time, as_float
-from ltc.util.param import ParamForcer
+from ltc.util.param import ParamUnfreezer
 
 
 def _interpolate_by_index(df, on_values):
@@ -53,7 +53,7 @@ class Timeseries(param.Parameterized):
                 self.callables[key] = value
             else:
                 self.callables.pop(key, None)
-                self.data[key] = value
+                self.data[key] = list(value)
         assert not set(self.callables) & set(self.data.columns)
 
     @classmethod
@@ -117,7 +117,7 @@ class Forcing(Timeseries):
         """
         Force values of selected state parameters.
         """
-        with ParamForcer(state):
+        with ParamUnfreezer(state):
             state.param.set_param(**self[state.time])
 
             for key, fn in self.callables.items():
