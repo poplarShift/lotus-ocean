@@ -15,6 +15,7 @@ default.profraw
 dev.ipynb
 
 docs/*.pdf
+docs/*.html
 
 out/
 *.csv

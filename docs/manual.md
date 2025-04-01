@@ -81,7 +81,17 @@ from lotus.iobl import SteadyLTCModel
 pydoc.help(SteadyLTCModel)
 ```
 
-TODO: command to display help text on class
+
+To generate html documentation of the entire module tree, use, e.g., `pydoc`:
+```bash
+for mod in $(find lotus/ -name "*.py"|tr '/' '.' | rev | cut -c 4-|rev|grep -v __init__|grep -v test_)
+    do pydoc -w $mod && mv $mod.html docs/
+done
+
+for mod in $(find lotus/ -type d |grep -v __pycache__ | tr '/' '.')
+    do pydoc -w $mod && mv $mod.html docs/
+done
+```
 
 ### Examples
 <a name="examples"></a>
@@ -141,7 +151,7 @@ Other notable modules are:
 
 LOTUS describes the model with stateful objects - parameters can be changed (almost) at will, even on existing objects, and parts of the model rerun. The benefit is flexibility but the cost is increased opacity as it becomes harder to track which algorithm affects which part of the model state. This necessitates introspection capabilities.
 
-LOTUS makes heavy use of [param](param.holoviz.org). Models inherit from `param.Parameterized` and describe successively complex parameters that are checked at runtime. a Its main vehicle is `IOBL` (TODO), a subclass of `ParamWatchdog`. `ParamWatchdog` can:
+LOTUS makes heavy use of [param](param.holoviz.org). Models inherit from `param.Parameterized` and describe successively complex parameters that are checked at runtime. Its main vehicles are `IOBL` and `SteadyLTCModel`, which inherit from `ParamWatchdog`. `ParamWatchdog` can:
 
 - log when parameters are changed, to allow introspection
 - protect parameters from being changed ([see next section](#forcedparams)), to protect the user from surprises.
@@ -160,10 +170,9 @@ param.get_logger().setLevel(param.DEBUG)
 ### Forced/dynamic parameters
 <a name="forcedparams"></a>
 
-On `ParamWatchdog` and its child classes (such as `SteadyLTCModel`), one can set multiple parameters:
-- `protect_frozen` 
-- `params_frozen`
-- `params_dynamic`
+On `ParamWatchdog` and its child classes (such as `SteadyLTCModel`), one can set multiple parameters that relate to "frozen" and "dynamic" parameters:
+- `params_frozen` can, once the instance is created, not easily be changed. By default, all parameters that are assigned at instance creation time will be frozen (since it is assumed they are specifically set by the user). This can be overridden using the `ParamUnfreezer` context manager, which temporarily unfreezes these parameters.
+- `params_dynamic` are parameters designed to not be frozen. For instance, one may assign an ice-ocean buoyancy flux `wb0` at model creation time to initialize length scale calculations, but also allow it to be updated using `update_interface`, which solves the three-equation system in more detail.
 
 ## Acknowledgments and further reading
 
