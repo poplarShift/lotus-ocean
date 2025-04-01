@@ -5,11 +5,11 @@ top_level = Path(__file__).resolve().parent.parent.parent
 import pandas as pd, numpy as np
 
 # import xarray as xr
-from ltc.run.run import ModelRun
-from ltc.run.stepper import TempSalStepper
-from ltc.run.forcing import Forcing
-from ltc.iobl import SteadyLTCModel
-from ltc.util.param import ValueSetLogger
+from lotus.run.run import ModelRun
+from lotus.run.stepper import TempSalStepper
+from lotus.run.forcing import Forcing
+from lotus.iobl import SteadyLTCModel
+from lotus.util.param import ValueSetLogger
 
 data = pd.read_csv(top_level / "data/TS.csv")
 

@@ -1,5 +1,5 @@
 from setuptools import setup, find_packages
-from ltc.util.version import get_git_version
+from lotus.util.version import get_git_version
 
 setup(
     name="ltc",

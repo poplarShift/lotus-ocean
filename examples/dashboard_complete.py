@@ -13,9 +13,9 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from ltc.iobl import SteadyLTCModel
-from ltc.iobl.util import get_transfer_coefficients, get_mixed_layer_depth_sigth_crit
-from ltc.util.param import ParamProtectFrozen
+from lotus.iobl import SteadyLTCModel
+from lotus.iobl.util import get_transfer_coefficients, get_mixed_layer_depth_sigth_crit
+from lotus.util.param import ParamProtectFrozen
 
 import holoviews as hv
 

@@ -11,8 +11,8 @@ import numpy as np
 top_level = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(top_level))
 
-from ltc.iobl import SteadyLTCModel
-from ltc.util.param import ParamUnfreezer
+from lotus.iobl import SteadyLTCModel
+from lotus.util.param import ParamUnfreezer
 
 pn.extension()
 hv.extension("bokeh")

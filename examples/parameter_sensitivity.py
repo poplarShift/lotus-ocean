@@ -17,9 +17,9 @@ import hvplot.xarray
 top_level = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(top_level))
 
-from ltc.iobl.model import SteadyLTCModel
-from ltc.iobl.util import get_transfer_coefficients
-from ltc.iobl.util import get_mixed_layer_depth_N2lim, get_mixed_layer_depth_sigth_crit
+from lotus.iobl.model import SteadyLTCModel
+from lotus.iobl.util import get_transfer_coefficients
+from lotus.iobl.util import get_mixed_layer_depth_N2lim, get_mixed_layer_depth_sigth_crit
 
 
 def construct_profile(

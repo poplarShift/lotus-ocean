@@ -2,7 +2,7 @@ import gsw
 import numpy as np
 from functools import partial
 from scipy.optimize import newton_krylov
-from ltc.iobl.model import interface_fluxes
+from lotus.iobl.model import interface_fluxes
 
 
 def shape(x):

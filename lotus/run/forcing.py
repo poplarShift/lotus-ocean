@@ -8,8 +8,8 @@ import param
 import gsw
 import numpy as np, pandas as pd
 
-from ltc.util.time import Time, as_float
-from ltc.util.param import ParamUnfreezer
+from lotus.util.time import Time, as_float
+from lotus.util.param import ParamUnfreezer
 
 
 def _interpolate_by_index(df, on_values):

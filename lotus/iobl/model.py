@@ -19,7 +19,7 @@ from .util import (
 from ..util.time import Time
 from ..util.param import ParamWatchdog
 from ..util.profile import significant_decimals
-from ltc.util.param import ParamUnfreezer
+from lotus.util.param import ParamUnfreezer
 
 import numbers
 

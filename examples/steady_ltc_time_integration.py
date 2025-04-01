@@ -7,11 +7,11 @@ if ltc_base_path not in sys.path:
 
 import pandas as pd, numpy as np, param
 
-from ltc.run.run import ModelRun
-from ltc.run.stepper import TempSalStepper
-from ltc.run.forcing import Forcing
-from ltc.iobl import SteadyLTCModel
-from ltc.iobl.util import get_transfer_coefficients
+from lotus.run.run import ModelRun
+from lotus.run.stepper import TempSalStepper
+from lotus.run.forcing import Forcing
+from lotus.iobl import SteadyLTCModel
+from lotus.iobl.util import get_transfer_coefficients
 import matplotlib.pyplot as plt
 
 

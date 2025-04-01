@@ -10,11 +10,11 @@ import hvplot.xarray
 import numpy as np
 import param
 
-from ltc.iobl import SteadyLTCModel
-from ltc.iobl.util import get_transfer_coefficients
-from ltc.run.forcing import Forcing
-from ltc.run.run import ModelRun
-from ltc.run.stepper import TempSalStepper
+from lotus.iobl import SteadyLTCModel
+from lotus.iobl.util import get_transfer_coefficients
+from lotus.run.forcing import Forcing
+from lotus.run.run import ModelRun
+from lotus.run.stepper import TempSalStepper
 
 try:
     import holoviews as hv

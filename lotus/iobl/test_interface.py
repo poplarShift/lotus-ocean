@@ -1,6 +1,6 @@
-from ltc.iobl import IceOceanInterface
-from ltc.iobl.util import get_transfer_coefficients
-from ltc.util.param import ValueSetLogger
+from lotus.iobl import IceOceanInterface
+from lotus.iobl.util import get_transfer_coefficients
+from lotus.util.param import ValueSetLogger
 
 
 def test_update_interface():

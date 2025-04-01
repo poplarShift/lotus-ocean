@@ -1,6 +1,6 @@
 from pathlib import Path
 from numpy.testing import assert_allclose
-from ltc.iobl.rossby import *
+from lotus.iobl.rossby import *
 import matplotlib.pyplot as plt
 
 top_level = Path(__file__).resolve().parent.parent.parent
@@ -144,13 +144,13 @@ def test_rossby_inverse():
 def test_compare_sltc():
     import pandas as pd, numpy as np, param
     import xarray as xr
-    from ltc.run.run import ModelRun
-    from ltc.run.stepper import TempSalStepper
-    from ltc.run.forcing import Forcing, Timeseries
-    from ltc.iobl import SteadyLTCModel
-    from ltc.iobl.util import get_transfer_coefficients
-    from ltc.util.time import Time
-    from ltc.util.param import ValueSetLogger
+    from lotus.run.run import ModelRun
+    from lotus.run.stepper import TempSalStepper
+    from lotus.run.forcing import Forcing, Timeseries
+    from lotus.iobl import SteadyLTCModel
+    from lotus.iobl.util import get_transfer_coefficients
+    from lotus.util.time import Time
+    from lotus.util.param import ValueSetLogger
 
     ustar0 = np.linspace(1e-3, 1e-2, 10)
 

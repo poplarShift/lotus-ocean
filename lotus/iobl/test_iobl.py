@@ -8,9 +8,9 @@ import xarray as xr
 import gsw
 import matplotlib.pyplot as plt
 
-from ltc.iobl import SteadyLTCModel
-from ltc.iobl.util import get_transfer_coefficients
-from ltc.util.param import ValueSetLogger
+from lotus.iobl import SteadyLTCModel
+from lotus.iobl.util import get_transfer_coefficients
+from lotus.util.param import ValueSetLogger
 
 
 def make_model():

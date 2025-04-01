@@ -1,6 +1,6 @@
 import pytest
 import param
-from ltc.util.param import ParamWatchdog, ParamUnfreezer, ValueSetLogger
+from lotus.util.param import ParamWatchdog, ParamUnfreezer, ValueSetLogger
 
 
 class Dummy(ParamWatchdog):

@@ -1,6 +1,6 @@
 import pytest
-from ltc.iobl.model import ModelState
-from ltc.util.param import ValueSetLogger
+from lotus.iobl.model import ModelState
+from lotus.util.param import ValueSetLogger
 
 
 def test_init():
