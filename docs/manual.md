@@ -41,12 +41,14 @@ For examples and tests:
 ### Steps
 
 1. **Clone the repository:**
+
     ```sh
     git clone https://github.com/poplarShift/lotus.git
     cd lotus
     ```
 
 2. **Create a virtual environment:** (optional)
+
     ```sh
     python3 -m venv venv
     source venv/bin/activate
@@ -54,13 +56,16 @@ For examples and tests:
 
 3. **Install the dependencies as desired:**
     For only the bare minimum:
+    
     ```sh
     pip install -r requirements_core.txt
     ```
     For the full set
+    
     ```sh
     pip install -r requirements_optional.txt
     ```
+    
     Note that the versions fixed in the requirements files are the ones that LOTUS has been tested with. It may well run with other versions of the same packages too.
 
 ## Usage (quickstart)
