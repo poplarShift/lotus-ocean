@@ -43,7 +43,7 @@ For examples and tests:
 1. **Clone the repository:**
 
     ```sh
-    git clone https://github.com/poplarShift/lotus.git
+    git clone https://github.com/poplarShift/lotus-ocean.git
     cd lotus
     ```
 
@@ -163,7 +163,7 @@ LOTUS makes heavy use of [param](param.holoviz.org). Models inherit from `param.
 
 The `param` package introduces no other dependencies and can be removed from the codebase with little effort should the need arise. 
 
-As  a further benefit, `param` makes creating interactive dashboards with [panel](panel.holoviz.org) a breeze (see Section [Examples](#examples)).
+As a further benefit, `param` makes creating interactive dashboards with [panel](panel.holoviz.org) a breeze (see Section [Examples](#examples)).
 
 
 The logging level can be set using e.g.
@@ -181,8 +181,8 @@ On `ParamWatchdog` and its child classes (such as `SteadyLTCModel`), one can set
 
 ## Acknowledgments and further reading
 
-The core of LOTUS is essentially an implementation of Miles McPhee's 2008 book "Air-ice-sea interaction" [1]. LOTUS profited from several discussions with Miles McPhee over the years and not the least multiple MatLab scripts provided by him. LOTUS ultimately sprung out of the author's attendance and involvement in AGF-211 starting in 2010.
+The core of LOTUS is essentially an implementation of Miles McPhee's 2008 book "Air-ice-sea interaction" [1]. LOTUS profited from several discussions with Miles McPhee over the years and not the least multiple MatLab scripts provided by him. LOTUS ultimately sprung out of the author's attendance and involvement in AGF-211 at UNIS, the University Centre in Svalbard, starting in 2010.
 
-Work on LOTUS was funded by The Research Council of Norway project TURBOT (grant no. 352188), the Fram Centre project SUDARCO, and the Sentinel North strategy at Université Laval.
+Work on LOTUS was funded by The Research Council of Norway project TURBOT (grant no. 352188), the Fram Centre project SUDARCO, and the Sentinel North strategy at Université Laval, Québec.
 
 [1] M. McPhee, Air-ice-ocean Interaction: Turbulent Ocean Boundary Layer Exchange Processes. Springer New York, 2008. doi: 10.1007/978-0-387-78335-2.
