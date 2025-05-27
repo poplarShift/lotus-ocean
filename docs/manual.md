@@ -11,6 +11,15 @@ LOTUS is a semi-empirical one-dimensional model of the turbulent ice-ocean bound
 
 It should also be noted that while LOTUS focuses on the ice-ocean boundary layer, one should (with little modification) be able to use it for any oceanic boundary layer, e.g. bottom boundary layers. See `examples/annual_cycles/baffin_bay.py` for an example with open water part of the year.
 
+
+## Features
+
+LOTUS can:
+1. Resolve the constant stress (Law of the Wall) and the outer (Ekman) layers
+1. Solve the Local Turbulence Closure model, both time-dependent and steady-state, for a given hydrographic profile and boundary conditions
+1. Use an implicit solver to time step either the velocity and all tracers (using the time-dependent LTC) or only the tracers (temperature, salinity, ...), using the Steady LTC (SLTC)
+1. Calculate ice-ocean fluxes of heat, salt and momentum as a function of hydrography and boundary conditions
+
 # Quickstart
 
 ## Installation
@@ -68,7 +77,7 @@ For examples and tests:
     
     Note that the versions fixed in the requirements files are the ones that LOTUS has been tested with. It may well run with other versions of the same packages too.
 
-## Usage (quickstart)
+## Usage
 
 ### Running the model
 
