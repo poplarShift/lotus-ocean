@@ -72,8 +72,40 @@ For examples and tests:
 
 ### Running the model
 
+LOTUS is best demonstrated by example. Many of the ones which can be found in `examples/` boil down to a variation on the following:
+
 ```python
-from lotus import SteadyLTCModel
+import pandas as pd
+from lotus.iobl import SteadyLTCModel
+
+data = pd.read_csv("data/TS.csv")
+
+state = SteadyLTCModel.from_ctd(
+    time=0,  # start at zero hours
+    latitude=78,  # will define Coriolis frequency and outer length scale
+    SA=data["SA"],  # important to provide CTD data
+    CT=data["CT"],  # on a staggered depth grid, e.g.:
+    zz=data.zz,  # [0.5, 1.5, 2.5, ...]
+    z0=0.049,  # ice-ocean interface roughness length
+    Sice=4,  # ice salinity
+    ustar0=0.012,  # ice-ocean friction velocity
+    wb0=0,  # ice-ocean buoyancy flux 
+    # - need to specify for length scale calculations
+    T_btm_bc_kind="flux",  # `T_btm_bc` now means the
+    T_btm_bc=0,  # lower boundary T flux
+    S_btm_bc_kind="flux",  # `S_btm_bc` now means the
+    S_btm_bc=0,  # lower boundary S flux
+)
+
+state.steady_ltc()
+# state now contains the steady-state solution
+
+# convert to xarray object  
+ds = state.output_state().isel(time=0).drop_vars("time")
+
+# e.g., plot Ekman spiral
+import matplotlib.pyplot as plt
+plt.plot(ds.U.real, ds.U.imag)
 ```
 
 ### Documentation
