@@ -146,7 +146,7 @@ Other notable modules are:
 - `lotus/util/param.py` defines various classes to interact with the `param` package, such as `ParamWatchdog` that surveys when and how parameters are set, and various context managers to prevent (or allow) parameters from being changed.
 - `lotus/util/profile.py` contains utilities to create CTD profiles that serve as input to `ModelState` instances.
 <!-- - `lotus/util/selector.py` could just remove this from lotus? -->
-- `lotus/util/time.py` defines a custom `Time`, which 
+- `lotus/util/time.py` defines a custom `Time` class which interchangeably represents date and time as `float`s or more advanced objects such as numpy `datetime64` or pandas `Timestamp` objects. `Time` objects can be incremented by numbers (interpreted as hours) and compared to each other.
 
 ## Infrastructure
 
