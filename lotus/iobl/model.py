@@ -20,6 +20,7 @@ from ..util.time import Time
 from ..util.param import ParamWatchdog
 from ..util.profile import significant_decimals
 from lotus.util.param import ParamUnfreezer
+from collections.abc import Iterable
 
 import numbers
 
@@ -763,10 +764,14 @@ class WaterColumn(ParamWatchdog):
                 else:
                     if isinstance(v, (numbers.Number, bool)):
                         data[k] = (["time"], [v])
-                    elif k in self._z_grid:
-                        data[k] = (["z", "time"], v[:, np.newaxis])
-                    elif k in self._zz_grid:
-                        data[k] = (["zz", "time"], v[:, np.newaxis])
+                    elif isinstance(v, np.ndarray):
+                        if v.ndim == 0:
+                            # catch the odd 0-d array
+                            data[k] = (["time"], [v])
+                        elif k in self._z_grid:
+                            data[k] = (["z", "time"], v[:, np.newaxis])
+                        elif k in self._zz_grid:
+                            data[k] = (["zz", "time"], v[:, np.newaxis])
 
             data["z"] = (["z"], self.z)
             data["zz"] = (["zz"], self.zz)
