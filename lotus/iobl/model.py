@@ -1108,7 +1108,9 @@ class SteadyLTCModel(IOBL):
         Find an iterative solution to the boundary layer problem.
         """
 
-        for j in range(self.maxit):
+        j = 0
+        while j < self.maxit:
+            j += 1
             Km_old = deepcopy(self.Km)
             self.update_turbulence()
             self._solve_steady_ekman()  # calculate new currents
@@ -1122,9 +1124,11 @@ class SteadyLTCModel(IOBL):
                 )
                 if "ustar0" in self.params_frozen:
                     # stress already matches the frozen value by definition
+                    # this is the normal scenario, described by McPhee in his book
                     self.param.debug("ustar0 already prescribed, no need to adjust.")
                     return
                 elif "Uice" in self.params_frozen:
+                    # this is an extension by the author
                     self.param.debug("Uice prescribed, adjusting ustar0.")
                     # still need to hit target ice-ocean relative velocity
                     logratio = np.log(abs(self.zz[0]) / self.z0) / self.kappa
@@ -1134,7 +1138,14 @@ class SteadyLTCModel(IOBL):
                     )  # the Uice we would get with current value of ustar0
                     ratio = Uice_reached / self.Uice
                     if abs(ratio - 1) > 5e-3:
+                        # have not converged on ustar
                         self.ustar0 /= ratio
+                        # reset the starting point to avoid running after moving target
+                        self.param.debug(
+                            "Re-init Ekman spiral at {} iterations.".format(j)
+                        )
+                        j = 0
+                        self.init_ekman_spiral()
                     else:
                         # stress matches the target value
                         self.param.debug(
