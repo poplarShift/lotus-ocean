@@ -28,7 +28,7 @@ class ModelRun(param.Parameterized):
     """
 
     stepper = param.ClassSelector(
-        Stepper,
+        class_=Stepper,
         allow_None=False,
         doc="""
         """,
