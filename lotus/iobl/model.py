@@ -940,15 +940,16 @@ class IOBL(
     """
 
     # Something like the following could easily be implemented in _solve_steady_ekman.
-    # U_source = param.ClassSelector(
-    #     class_=(np.ndarray, complex, float),
-    #     default=None,
-    #     doc="""
-    #     Source function for the horizontal velocity (m s-2). May accomodate a
-    #     thermal wind. Treats source as barotropic
-    #     if given a (complex or real) number.
-    #     """,
-    # )
+    U_source = param.ClassSelector(
+        class_=(np.ndarray, complex, float),
+        default=None,
+        doc="""
+        NOT TESTED!
+        Source function for the horizontal velocity (m s-2). May accomodate a
+        thermal wind. Treats source as barotropic
+        if given a (complex or real) number.
+        """,
+    )
 
     T_btm_bc = param.Number(
         default=None,
@@ -1001,8 +1002,14 @@ class IOBL(
             """,
     )
 
-    T_source = param.Array(default=None, doc="")
-    S_source = param.Array(default=None, doc="")
+    T_source = param.Array(
+        default=None, doc="Depth-dependent heat source, e.g. solar radiation (K s-1)"
+    )
+    
+    S_source = param.Array(
+        default=None,
+        doc="Depth-dependent salt source, e.g. lateral meltwater flux (s-1)",
+    )
     tracer_source = param.Array(default=None, doc="")
 
     def __init__(self, *argv, **kwarg):
