@@ -28,13 +28,13 @@ class Stepper(param.Parameterized):
     """
 
     state = param.ClassSelector(
-        ModelState,
+        class_=ModelState,
         allow_None=False,
         doc="""
         A model that calculates turbulence parameters for a given state.""",
     )
 
-    forcing = param.ClassSelector(Forcing, default=None, doc="""""")
+    forcing = param.ClassSelector(class_=Forcing, default=None, doc="""""")
 
     deltat = param.Number(
         default=6,

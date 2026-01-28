@@ -44,7 +44,7 @@ class ModelState(ParamWatchdog):
     """
 
     time = param.ClassSelector(
-        Time,
+        class_=Time,
         default=Time(np.nan),
         allow_None=False,
         doc="""
