@@ -1115,7 +1115,8 @@ class SteadyLTCModel(IOBL):
         """
 
         j = 0
-        while j < self.maxit:
+        k = 0
+        while j < self.maxit and k < self.maxit:
             j += 1
             Km_old = deepcopy(self.Km)
             self.update_turbulence()
@@ -1137,13 +1138,14 @@ class SteadyLTCModel(IOBL):
                     # this is an extension by the author
                     self.param.debug("Uice prescribed, adjusting ustar0.")
                     # still need to hit target ice-ocean relative velocity
+                    k += 1
                     logratio = np.log(abs(self.zz[0]) / self.z0) / self.kappa
                     delU = self.ustar0 * logratio
                     Uice_reached = (
                         self.U[0] + delU
                     )  # the Uice we would get with current value of ustar0
                     ratio = Uice_reached / self.Uice
-                    if abs(ratio - 1) > 5e-3:
+                    if abs(ratio - 1) > 5e-3 and k <= self.maxit:
                         # have not converged on ustar
                         self.ustar0 /= ratio
                         # reset the starting point to avoid running after moving target
@@ -1152,6 +1154,11 @@ class SteadyLTCModel(IOBL):
                         )
                         j = 0
                         self.init_ekman_spiral()
+                    elif k > self.maxit:
+                        self.param.warning(
+                            "Did not converge on ustar0 at time {}!".format(self.time)
+                        )
+
                     else:
                         # stress matches the target value
                         self.param.debug(
@@ -1159,7 +1166,7 @@ class SteadyLTCModel(IOBL):
                         )
                         return
 
-        self.param.warning("Model at time {} did not converge!".format(self.time))
+        self.param.warning("SLTC model at time {} did not converge!".format(self.time))
 
     def _has_converged(self, Km, Km_old):
         if np.nanmean(abs((Km - Km_old) / Km)) < self.tol:
