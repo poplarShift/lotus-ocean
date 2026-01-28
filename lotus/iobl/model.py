@@ -661,16 +661,15 @@ class WaterColumn(ParamWatchdog):
 
             self.update_ctd(itcount=itcount + 1)
 
-        else:
-            # insert NaN at uppermost flux level z[0] == 0 m
-            self.gradT = np.r_[np.nan, np.diff(self.T) / self.dzz]
-            self.gradS = np.r_[np.nan, np.diff(self.S) / self.dzz]
+        # insert NaN at uppermost flux level z[0] == 0 m
+        self.gradT = np.r_[np.nan, np.diff(self.T) / self.dzz]
+        self.gradS = np.r_[np.nan, np.diff(self.S) / self.dzz]
 
-            rhom = np.interp(self.z, self.zz, rho)
-            self.n2 = self.grav * gradrho / rhom
+        rhom = np.interp(self.z, self.zz, rho)
+        self.n2 = self.grav * gradrho / rhom
 
-            self.rho = rho
-            self.set_mixed_layer_depth()
+        self.rho = rho
+        self.set_mixed_layer_depth()
 
     def set_mixed_layer_depth(self):
         """
