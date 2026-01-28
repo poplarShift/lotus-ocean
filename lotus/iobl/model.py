@@ -726,7 +726,7 @@ class WaterColumn(ParamWatchdog):
         else:
             self.ix_pc = len(self.zz) - 1
             self.param.log(
-                param.INFO, "No pycnocline found, returning lowest grid cell!"
+                param.WARNING, "No pycnocline found at time {}, returning lowest grid cell!".format(self.time)
             )
 
         self.wb_pc = self.wb[self.ix_pc]
