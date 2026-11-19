@@ -28,13 +28,13 @@ class Stepper(param.Parameterized):
     """
 
     state = param.ClassSelector(
-        ModelState,
+        class_=ModelState,
         allow_None=False,
         doc="""
         A model that calculates turbulence parameters for a given state.""",
     )
 
-    forcing = param.ClassSelector(Forcing, default=None, doc="""""")
+    forcing = param.ClassSelector(class_=Forcing, default=None, doc="""""")
 
     deltat = param.Number(
         default=6,
@@ -82,6 +82,20 @@ class Stepper(param.Parameterized):
         # Step integration
         stepper._step_time()
         stepper._step_fields()  # Need implementation in subclass
+        stepper._step_ice()
+
+    def _step_ice(self, **kwarg):
+        """
+        Step ice-related parameters.
+
+        Could also include things like ice salinity etc.
+        """
+        stepper = self
+        state = stepper.state
+
+        if "hice" not in state.params_frozen:
+            # change ice thickness (m) using w_interface (m s-1) and deltat (hrs)
+            state.hice -= state.w_interface * stepper.deltat * 3600
 
     def _step_time(self, **kwarg):
         self.state.time += self.deltat / 24
@@ -243,6 +257,8 @@ class Stepper(param.Parameterized):
 
         # surface flux condition
         # Eq. 7.12.
+        # note that F0 is upward positive, but dz is negative since we switched vertical
+        # axis orientation to be consistent with equations in book
         D[0] = (dt2 * (F0 / dz[0] + Q[0]) + theta_jm1[0]) / (1 - A[0])
         E[0] = A[0] / (A[0] - 1)
 

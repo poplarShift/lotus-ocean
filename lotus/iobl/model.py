@@ -20,6 +20,7 @@ from ..util.time import Time
 from ..util.param import ParamWatchdog
 from ..util.profile import significant_decimals
 from lotus.util.param import ParamUnfreezer
+from collections.abc import Iterable
 
 import numbers
 
@@ -43,7 +44,7 @@ class ModelState(ParamWatchdog):
     """
 
     time = param.ClassSelector(
-        Time,
+        class_=Time,
         default=Time(np.nan),
         allow_None=False,
         doc="""
@@ -660,16 +661,15 @@ class WaterColumn(ParamWatchdog):
 
             self.update_ctd(itcount=itcount + 1)
 
-        else:
-            # insert NaN at uppermost flux level z[0] == 0 m
-            self.gradT = np.r_[np.nan, np.diff(self.T) / self.dzz]
-            self.gradS = np.r_[np.nan, np.diff(self.S) / self.dzz]
+        # insert NaN at uppermost flux level z[0] == 0 m
+        self.gradT = np.r_[np.nan, np.diff(self.T) / self.dzz]
+        self.gradS = np.r_[np.nan, np.diff(self.S) / self.dzz]
 
-            rhom = np.interp(self.z, self.zz, rho)
-            self.n2 = self.grav * gradrho / rhom
+        rhom = np.interp(self.z, self.zz, rho)
+        self.n2 = self.grav * gradrho / rhom
 
-            self.rho = rho
-            self.set_mixed_layer_depth()
+        self.rho = rho
+        self.set_mixed_layer_depth()
 
     def set_mixed_layer_depth(self):
         """
@@ -726,7 +726,7 @@ class WaterColumn(ParamWatchdog):
         else:
             self.ix_pc = len(self.zz) - 1
             self.param.log(
-                param.INFO, "No pycnocline found, returning lowest grid cell!"
+                param.WARNING, "No pycnocline found at time {}, returning lowest grid cell!".format(self.time)
             )
 
         self.wb_pc = self.wb[self.ix_pc]
@@ -763,10 +763,14 @@ class WaterColumn(ParamWatchdog):
                 else:
                     if isinstance(v, (numbers.Number, bool)):
                         data[k] = (["time"], [v])
-                    elif k in self._z_grid:
-                        data[k] = (["z", "time"], v[:, np.newaxis])
-                    elif k in self._zz_grid:
-                        data[k] = (["zz", "time"], v[:, np.newaxis])
+                    elif isinstance(v, np.ndarray):
+                        if v.ndim == 0:
+                            # catch the odd 0-d array
+                            data[k] = (["time"], [v])
+                        elif k in self._z_grid:
+                            data[k] = (["z", "time"], v[:, np.newaxis])
+                        elif k in self._zz_grid:
+                            data[k] = (["zz", "time"], v[:, np.newaxis])
 
             data["z"] = (["z"], self.z)
             data["zz"] = (["zz"], self.zz)
@@ -936,15 +940,16 @@ class IOBL(
     """
 
     # Something like the following could easily be implemented in _solve_steady_ekman.
-    # U_source = param.ClassSelector(
-    #     class_=(np.ndarray, complex, float),
-    #     default=None,
-    #     doc="""
-    #     Source function for the horizontal velocity (m s-2). May accomodate a
-    #     thermal wind. Treats source as barotropic
-    #     if given a (complex or real) number.
-    #     """,
-    # )
+    U_source = param.ClassSelector(
+        class_=(np.ndarray, complex, float),
+        default=None,
+        doc="""
+        NOT TESTED!
+        Source function for the horizontal velocity (m s-2). May accomodate a
+        thermal wind. Treats source as barotropic
+        if given a (complex or real) number.
+        """,
+    )
 
     T_btm_bc = param.Number(
         default=None,
@@ -997,8 +1002,14 @@ class IOBL(
             """,
     )
 
-    T_source = param.Array(default=None, doc="")
-    S_source = param.Array(default=None, doc="")
+    T_source = param.Array(
+        default=None, doc="Depth-dependent heat source, e.g. solar radiation (K s-1)"
+    )
+    
+    S_source = param.Array(
+        default=None,
+        doc="Depth-dependent salt source, e.g. lateral meltwater flux (s-1)",
+    )
     tracer_source = param.Array(default=None, doc="")
 
     def __init__(self, *argv, **kwarg):
@@ -1103,7 +1114,10 @@ class SteadyLTCModel(IOBL):
         Find an iterative solution to the boundary layer problem.
         """
 
-        for j in range(self.maxit):
+        j = 0
+        k = 0
+        while j < self.maxit and k < self.maxit:
+            j += 1
             Km_old = deepcopy(self.Km)
             self.update_turbulence()
             self._solve_steady_ekman()  # calculate new currents
@@ -1117,19 +1131,34 @@ class SteadyLTCModel(IOBL):
                 )
                 if "ustar0" in self.params_frozen:
                     # stress already matches the frozen value by definition
+                    # this is the normal scenario, described by McPhee in his book
                     self.param.debug("ustar0 already prescribed, no need to adjust.")
                     return
                 elif "Uice" in self.params_frozen:
+                    # this is an extension by the author
                     self.param.debug("Uice prescribed, adjusting ustar0.")
                     # still need to hit target ice-ocean relative velocity
+                    k += 1
                     logratio = np.log(abs(self.zz[0]) / self.z0) / self.kappa
                     delU = self.ustar0 * logratio
                     Uice_reached = (
                         self.U[0] + delU
                     )  # the Uice we would get with current value of ustar0
                     ratio = Uice_reached / self.Uice
-                    if abs(ratio - 1) > 5e-3:
+                    if abs(ratio - 1) > 5e-3 and k <= self.maxit:
+                        # have not converged on ustar
                         self.ustar0 /= ratio
+                        # reset the starting point to avoid running after moving target
+                        self.param.debug(
+                            "Re-init Ekman spiral at {} iterations.".format(j)
+                        )
+                        j = 0
+                        self.init_ekman_spiral()
+                    elif k > self.maxit:
+                        self.param.warning(
+                            "Did not converge on ustar0 at time {}!".format(self.time)
+                        )
+
                     else:
                         # stress matches the target value
                         self.param.debug(
@@ -1137,7 +1166,7 @@ class SteadyLTCModel(IOBL):
                         )
                         return
 
-        self.param.warning("Model at time {} did not converge!".format(self.time))
+        self.param.warning("SLTC model at time {} did not converge!".format(self.time))
 
     def _has_converged(self, Km, Km_old):
         if np.nanmean(abs((Km - Km_old) / Km)) < self.tol:
