@@ -9,11 +9,20 @@ build
 dist
 ltc.egg-info
 .version
-
+    
 default.profraw
 
 dev.ipynb
 
-out/
+docs/*.pdf
+docs/*.html
+
+/out/**
+!/out/**/
+!/out/examples/baffin_bay/.touch
+!/out/tests/iobl/.touch
+!/out/tests/run/.touch
+!/out/tests/rossby/.touch
+
 *.csv
 *.nc
